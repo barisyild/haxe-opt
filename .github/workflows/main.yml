@@ -650,6 +650,8 @@ jobs:
           eval $(opam env)
           opam env
           opam pin add ctypes ${{env.CTYPES}} --yes
+          # haxe-plus: luv 0.5.14 does not build with this ctypes; 0.5.13 does (HAXE-PLUS.md, C4)
+          opam pin add luv 0.5.13 --no-action
           opam pin add haxe . --no-action
           opam install haxe --deps-only --assume-depexts
           opam list
@@ -768,6 +770,15 @@ jobs:
         run: |
           choco install wget
           wget --version
+
+      # haxe-plus: 4.3.7's PHP runtime predates PHP 8.5, whose float-to-int cast warnings it turns
+      # into exceptions (HAXE-PLUS.md, C4); installed where the tests look for it, C:\tools\php
+      - name: PHP 8.4
+        if: matrix.target == 'php'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, sqlite3
 
       - name: Setup haxelib
         shell: pwsh

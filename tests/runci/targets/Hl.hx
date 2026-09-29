@@ -29,7 +29,8 @@ class Hl {
 			return;
 		}
 		if (!FileSystem.exists(hlSrc))
-			runCommand("git", ["clone", "https://github.com/HaxeFoundation/hashlink.git", hlSrc]);
+			// haxe-plus: HashLink 1.15, as when 4.3.7 was released; master crashes on its output on Windows (HAXE-PLUS.md, C4)
+			runCommand("git", ["clone", "--branch", "1.15", "--depth", "1", "https://github.com/HaxeFoundation/hashlink.git", hlSrc]);
 		else
 			infoMsg("Reusing hashlink repository");
 

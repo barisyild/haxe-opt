@@ -623,15 +623,18 @@ the run's tests before announcing. The tag's commit must contain this workflow.
   and the pcre2 bindings 8.0.3 (which camlp5 needs) no longer compile. The job pins luv 0.5.14
   (whose release notes name exactly this) and pcre2 8.0.4, and haxe.opam accepts luv `>= 0.5.13`
   instead of `= 0.5.13`, as upstream does. Its install and build steps now stop at the first
-  failing command, where a failure used to surface only at the artifact check.
+  failing command, where a failure used to surface only at the artifact check. The mac builds pin
+  luv 0.5.13: they pin ctypes 0.21.1, with which 0.5.14 does not compile.
+- HashLink: the tests build HashLink 1.15, the release 4.3.7 came out with, instead of master,
+  which crashes on 4.3.7's output on Windows (`hl.exe bin/unit.hl`, 0xC0000028).
 - `HXCPP_COMPILE_CACHE` is `${{ github.workspace }}/hxcache` in every test job: hxcpp passes the
   `~` of `~/hxcache` to the linker as it is.
 - Lua: hererocks is installed from its git repository with pipx (as upstream does): the released
   one can no longer fetch LuaJIT 2.0, and the runner's pip installs the git one as `UNKNOWN`,
   without its command.
-- mac PHP test: PHP 8.4 instead of the runner's 8.5, whose warnings on float-to-int casts it cannot
-  represent 4.3.7's PHP runtime turns into exceptions (`php.Boot.shiftRightUnsigned`, Issue7533).
-  Changing the runtime would change PHP output, which haxe-plus does not do.
+- PHP tests on mac and Windows: PHP 8.4 instead of the runners' 8.5, whose warnings on float-to-int
+  casts it cannot represent 4.3.7's PHP runtime turns into exceptions (`php.Boot.shiftRightUnsigned`,
+  Issue7533). Changing the runtime would change PHP output, which haxe-plus does not do.
 - mac Java test: JDK 11 (as on Linux) instead of the runner's JDK 21, whose class files 4.3.7's
   Java library reader does not fully read (`MyClass_MyAnnotation` not found).
 
