@@ -113,7 +113,8 @@ reflaxe.CPP's own classes), write barriers about 5%, and a flat tail.
 `haxe4` builds like Haxe 4.3.7 (`extra/BUILDING.md`): an OCaml 4.14 switch with haxe.opam's
 dependencies, plus pcre2, zlib, neko and mbedtls 2.x. Verified with: OCaml 4.14.2 (no flambda),
 opam 2.3.0, dune 3.15.3, camlp5 8.03.04, ocamlfind 1.9.1, sedlex 3.7, xml-light 2.5, extlib 1.8.0,
-ptmap 2.0.5, sha 1.15.4, camlp-streams 5.0.1, luv 0.5.13, ctypes 0.24.0, integers 0.8.0; pcre2
+ptmap 2.0.5, sha 1.15.4, camlp-streams 5.0.1, luv 0.5.13 (0.5.14 in CI: C4), ctypes 0.24.0,
+integers 0.8.0; pcre2
 10.47, zlib 1.2.12, neko 2.4.1, mbedtls 2.28.9; macOS 27 on arm64. OCaml 5 has not been tried.
 
 On macOS with a recent clang, luv 0.5.13 fails to build with
@@ -211,8 +212,9 @@ The commits of each branch follow these groups, so each can be taken on its own:
 "eval: native JIT" (J), "eval: exact run-time caches and fewer allocations" (R1–R12),
 "compiler: GC settings for macro-heavy builds" (G1), "ci: run the CI workflow by hand only" (C1),
 "haxe-plus: documentation, scripts, differential tests", "ci: runners and OCaml 4.14 for every
-build" (C2), "ci: attach the packages to a published release" (C3) and "eval: native code only
-for heavy projects" (J2). The code comments at each change repeat the essentials.
+build" (C2), "ci: attach the packages to a published release" (C3), "eval: native code only
+for heavy projects" (J2) and "ci: today's runners and tools" (C4). The code comments at each
+change repeat the essentials.
 
 ### J: native JIT — `src/macro/eval/evalJitNative.ml`, `evalJitRt.ml`
 
@@ -582,7 +584,8 @@ tests on every platform; 27 jobs in all. What failed is the environment, which m
 - mac php test: `Issue7533` (`shiftRightUnsigned`) under the runner's newer PHP.
 - mac java/jvm test: the test library's `MyClass_MyAnnotation` is not found (the runner's Java).
 
-To tell these from haxe-plus's own effects, run the same workflow on 4.3.7 with only C1 and C2.
+Upstream's development branch, run in the same fork on the same day, passed everything: the
+fixes are in its CI (C4 takes them over).
 
 ### C3: packages attached to a published release — job `release` in `.github/workflows/main.yml`
 
@@ -600,16 +603,38 @@ tool does not know, was added by hand a year later.
 
 **What.** haxe-plus has neither the build server nor the tool (bound to HaxeFoundation/haxe), so
 the CI does the tool's part itself: the workflow also runs when a release is published
-(`release: published`), and after the five build jobs the `release` job attaches that run's
-packages to the release, named and unpacked as the tool does, `linux-arm64` included. The tests run
-in the same run but do not hold the upload back.
+(`release: published`), and after the build jobs the `release` job attaches that run's packages to
+the release, named and unpacked as the tool does, `linux-arm64` included (32-bit Windows is no
+longer built: C4). The tests run in the same run but do not hold the upload back.
 
 **Releasing.** On GitHub, publish a release of the `haxe4` branch with a new tag `<base>-plus.<n>`
 (`4.3.7-plus.1`, ...) and its notes (what changed since the last one, from this file). The run
 builds the tag (no revision in `haxe -version`) and attaches `haxe-<tag>-linux64.tar.gz`,
-`-linux-arm64.tar.gz`, `-osx.tar.gz`, `-osx-installer.pkg`, `-win64.zip`, `-win64.exe`, `-win.zip`
-and `-win.exe`. Check the run's tests before announcing. The tag's commit must contain this
-workflow.
+`-linux-arm64.tar.gz`, `-osx.tar.gz`, `-osx-installer.pkg`, `-win64.zip` and `-win64.exe`. Check
+the run's tests before announcing. The tag's commit must contain this workflow.
+
+### C4: today's runners and tools — `.github/workflows/main.yml`, `haxe.opam`, `tests/runci/targets/Lua.hx`
+
+**What**, for each failure of the trial run (C2), mostly as upstream's current CI does it:
+- 32-bit Windows: its build and test jobs are gone. Its OCaml setup (a fork of `setup-ocaml`)
+  no longer runs, and upstream stopped building 32-bit Windows too. The packages lose `win.zip`
+  and `win.exe`.
+- Windows 64: cygwin now ships GCC 14, which makes incompatible pointer types errors: luv 0.5.13
+  and the pcre2 bindings 8.0.3 (which camlp5 needs) no longer compile. The job pins luv 0.5.14
+  (whose release notes name exactly this) and pcre2 8.0.4, and haxe.opam accepts luv `>= 0.5.13`
+  instead of `= 0.5.13`, as upstream does. Its install and build steps now stop at the first
+  failing command, where a failure used to surface only at the artifact check.
+- `HXCPP_COMPILE_CACHE` is `${{ github.workspace }}/hxcache` in every test job: hxcpp passes the
+  `~` of `~/hxcache` to the linker as it is.
+- Lua: hererocks is installed from its git repository (as upstream does), whose LuaJIT 2.0
+  download still works.
+- mac PHP test: PHP 8.4 instead of the runner's 8.5, whose warnings on float-to-int casts it cannot
+  represent 4.3.7's PHP runtime turns into exceptions (`php.Boot.shiftRightUnsigned`, Issue7533).
+  Changing the runtime would change PHP output, which haxe-plus does not do.
+- mac Java test: JDK 11 (as on Linux) instead of the runner's JDK 21, whose class files 4.3.7's
+  Java library reader does not fully read (`MyClass_MyAnnotation` not found).
+
+**Porting.** For haxe5, take upstream's CI of that release as it is; C4 is only for 4.3.7's.
 
 ## Rejected ideas
 

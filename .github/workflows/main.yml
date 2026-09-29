@@ -10,6 +10,7 @@ on:
     types: [published]
 
 jobs:
+  # haxe-plus: no 32-bit Windows build, as upstream since: its OCaml setup no longer runs (HAXE-PLUS.md, C4)
   windows64-build:
     runs-on: windows-latest
     env:
@@ -73,10 +74,15 @@ jobs:
           & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'echo "$OLDPWD"')
           & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && tar -C / -xvf libmbedtls.tar.xz')
 
+      # haxe-plus: luv 0.5.14 and pcre2 8.0.4 build with the GCC 14 cygwin now ships (HAXE-PLUS.md, C4)
       - name: Install OCaml libraries
         shell: pwsh
         run: |
           Set-PSDebug -Trace 1
+          $PSNativeCommandUseErrorActionPreference = $true
+          $ErrorActionPreference = 'Stop'
+          opam pin add luv 0.5.14 --no-action
+          opam pin add pcre2 8.0.4 --no-action
           opam install haxe --deps-only
           opam list
 
@@ -100,6 +106,9 @@ jobs:
         shell: pwsh
         run: |
           Set-PSDebug -Trace 1
+          # haxe-plus: stop at the first failing command, not at the artifact check (C4)
+          $PSNativeCommandUseErrorActionPreference = $true
+          $ErrorActionPreference = 'Stop'
           & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win -j`nproc` haxe 2>&1')
           & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win haxelib 2>&1')
           & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -f Makefile.win echo_package_files package_bin package_installer_win package_choco 2>&1')
@@ -121,138 +130,6 @@ jobs:
           name: win${{env.ARCH}}Binaries
           path: out
 
-
-  windows-build:
-    runs-on: windows-latest
-    env:
-      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
-      PLATFORM: windows
-      ARCH: 32
-      MINGW_ARCH: i686
-      CYG_ROOT: D:\cygwin
-    steps:
-      - uses: actions/checkout@main
-        with:
-          submodules: recursive
-
-      - name: Use GNU Tar from msys
-        run: |
-          echo "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          rm C:\msys64\usr\bin\bash.exe
-
-      - name: choco install nsis
-        uses: nick-invision/retry@v3
-        with:
-          timeout_minutes: 10
-          max_attempts: 10
-          command: choco install --no-progress nsis.portable --version 3.09 -y
-
-      - name: choco install things
-        shell: pwsh
-        run: choco install --no-progress curl wget 7zip.portable -y
-
-      - name: Prepend Chocolatey path
-        shell: pwsh
-        run: Write-Host "::add-path::C:\ProgramData\chocolatey\bin"
-
-      - name: Install Neko from S3
-        shell: pwsh
-        run: |
-          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $env:RUNNER_TEMP/neko_latest.zip
-          Expand-Archive $env:RUNNER_TEMP/neko_latest.zip -DestinationPath $env:RUNNER_TEMP
-          $NEKOPATH = Get-ChildItem $env:RUNNER_TEMP/neko-*-*
-          echo "$NEKOPATH" >> $env:GITHUB_PATH
-          echo "NEKOPATH=$NEKOPATH" >> $env:GITHUB_ENV
-
-      - name: Print Neko version
-        run: neko -version 2>&1
-
-      - name: Setup ocaml
-        id: ocaml
-        continue-on-error: true
-        uses: klabz/setup-ocaml@win32-2025-2
-        with:
-          ocaml-compiler: 4.14.0
-          opam-local-packages: |
-            haxe.opam
-
-      # TODO make it work on first try
-      # (when cygwin cache doesn't exist, ocaml install fails with a curl error)
-      - name: Setup ocaml (second chance)
-        if: steps.ocaml.outcome == 'failure'
-        uses: klabz/setup-ocaml@win32-2025-2
-        with:
-          ocaml-compiler: 4.14.0
-          opam-local-packages: |
-            haxe.opam
-
-      - name: Install dependencies
-        shell: pwsh
-        run: |
-          Set-PSDebug -Trace 1
-          curl.exe -fsSL -o "libmbedtls.tar.xz" --retry 3 https://github.com/Simn/mingw64-mbedtls/releases/download/2.16.3/mingw64-$($env:MINGW_ARCH)-mbedtls-2.16.3-1.tar.xz
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'curl -L https://cpanmin.us | perl - App::cpanminus')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cpanm IPC::System::Simple module')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cpanm String::ShellQuote')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'echo "$OLDPWD"')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && tar -C / -xvf libmbedtls.tar.xz')
-
-      - name: Install OCaml libraries
-        shell: pwsh
-        run: |
-          Set-PSDebug -Trace 1
-          opam install ocaml-env-mingw32
-          opam install conf-mingw-w64-pcre2-i686
-          opam install haxe --deps-only
-          opam list
-
-      - name: Check mingw dll files
-        shell: bash
-        run: |
-          ls "$CYG_ROOT/usr/"
-          echo "bin/"
-          ls "$CYG_ROOT/usr/i686-w64-mingw32/sys-root/mingw/bin/"
-
-      - name: Expose mingw dll files
-        shell: pwsh
-        run: Write-Host "::add-path::${env:CYG_ROOT}/usr/$($env:MINGW_ARCH)-w64-mingw32/sys-root/mingw/bin"
-
-      # required to be able to retrieve the revision
-      - name: Mark directory as safe
-        shell: pwsh
-        run: |
-          Set-PSDebug -Trace 1
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'git config --global --add safe.directory "$OLDPWD"')
-
-      - name: Set ADD_REVISION=1 for non-release
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        shell: pwsh
-        run: echo "ADD_REVISION=1" >> $Env:GITHUB_ENV
-
-      - name: Build Haxe
-        shell: pwsh
-        run: |
-          Set-PSDebug -Trace 1
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win32 -j`nproc` haxe 2>&1')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win32 haxelib 2>&1')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && file ./haxe.exe')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -f Makefile.win32 echo_package_files package_bin package_installer_win package_choco 2>&1')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && cygcheck ./haxe.exe')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && cygcheck ./haxelib.exe')
-          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && ls ./out')
-
-      - name: Check artifact
-        shell: bash
-        run: |
-          ls out
-          # Output should contain binaries zip, installer zip and nupkg
-          [ $(ls -1 out | wc -l) -eq "3" ]
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: win${{env.ARCH}}Binaries
-          path: out
 
 
   linux-build:
@@ -363,13 +240,14 @@ jobs:
           name: xmldoc
           path: extra/doc
 
+  # haxe-plus: HXCPP_COMPILE_CACHE is absolute in every test job: hxcpp passes a leading ~ to the linker as it is (C4)
   linux-test:
     needs: linux-build
     runs-on: ubuntu-22.04
     env:
       PLATFORM: linux64
       TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       HAXE_STD_PATH: /usr/local/share/haxe/std
     strategy:
       fail-fast: false
@@ -456,7 +334,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       PLATFORM: linux64
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
     steps:
       - uses: actions/checkout@main
         with:
@@ -620,7 +498,7 @@ jobs:
     env:
       PLATFORM: linux-arm64
       TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       HAXE_STD_PATH: /usr/local/share/haxe/std
     strategy:
       fail-fast: false
@@ -814,7 +692,7 @@ jobs:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
       PLATFORM: windows64
       TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       ARCH: 64
     strategy:
       fail-fast: false
@@ -903,102 +781,6 @@ jobs:
         working-directory: ${{github.workspace}}/tests
 
 
-  windows-test:
-    needs: windows-build
-    runs-on: windows-latest
-    env:
-      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
-      PLATFORM: windows
-      TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
-      ARCH: 32
-    strategy:
-      fail-fast: false
-      matrix:
-        # TODO jvm: https://github.com/HaxeFoundation/haxe/issues/8601
-        # TODO enable lua after https://github.com/HaxeFoundation/haxe/issues/10919
-        target: [macro, js, hl, cpp, java, cs, php, python, flash, neko]
-    steps:
-      - uses: actions/checkout@main
-        with:
-          submodules: recursive
-      - uses: actions/download-artifact@v4
-        with:
-          name: win${{env.ARCH}}Binaries
-          path: win${{env.ARCH}}Binaries
-
-      - name: Install Neko from S3
-        shell: pwsh
-        run: |
-          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $env:RUNNER_TEMP/neko_latest.zip
-          Expand-Archive $env:RUNNER_TEMP/neko_latest.zip -DestinationPath $env:RUNNER_TEMP
-          $NEKOPATH = Get-ChildItem $env:RUNNER_TEMP/neko-*-*
-          echo "$NEKOPATH" >> $env:GITHUB_PATH
-          echo "NEKOPATH=$NEKOPATH" >> $env:GITHUB_ENV
-
-      - name: Print Neko version
-        run: neko -version 2>&1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18.17.1
-
-      # - name: Quick test
-      #   shell: pwsh
-      #   run: |
-      #     $DOWNLOADDIR="./win$($env:ARCH)Binaries"
-      #     new-item -Name $DOWNLOADDIR -ItemType directory
-      #     Invoke-WebRequest https://build.haxe.org/builds/haxe/$env:PLATFORM/haxe_latest.zip -OutFile $DOWNLOADDIR/haxe_bin.zip
-
-      - name: Setup Haxe
-        shell: pwsh
-        run: |
-          $DOWNLOADDIR="./win$($env:ARCH)Binaries"
-          Expand-Archive $DOWNLOADDIR/*_bin.zip -DestinationPath $DOWNLOADDIR
-          Set-PSDebug -Trace 1
-          $HAXEPATH = Get-ChildItem $DOWNLOADDIR/haxe_*_* -Directory
-          Write-Host "::add-path::$HAXEPATH"
-          Write-Host "::set-env name=HAXELIB_ROOT::$HAXEPATH\lib"
-
-      - name: Print Haxe version
-        shell: pwsh
-        run: haxe -version
-
-      - name: "Make Python 3 be available as python3 in the cmdline"
-        shell: pwsh
-        run: |
-          Set-PSDebug -Trace 1
-          $pypath = python -c "import sys; print(sys.executable)"
-          $py3path = $pypath.replace("python.exe","python3.exe")
-          cmd /c mklink $py3path $pypath
-          python3 -V
-
-      - name: Install hererocks
-        if: matrix.target == 'lua'
-        shell: cmd
-        run: |
-          pip install hererocks
-          hererocks lua53 -l5.3 -rlatest
-          call lua53/bin/activate
-
-      - name: Install wget
-        if: matrix.target == 'flash'
-        shell: cmd
-        run: |
-          choco install wget
-          wget --version
-
-      - name: Setup haxelib
-        shell: pwsh
-        run: |
-          mkdir "$env:HAXELIB_ROOT"
-          haxelib setup "$env:HAXELIB_ROOT"
-
-      - name: Test
-        shell: pwsh
-        run: haxe RunCi.hxml
-        working-directory: ${{github.workspace}}/tests
-
 
   mac-build-universal:
     needs: mac-build
@@ -1040,7 +822,7 @@ jobs:
     env:
       PLATFORM: mac
       TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       HAXE_STD_PATH: /usr/local/share/haxe/std
     strategy:
       fail-fast: false
@@ -1103,6 +885,22 @@ jobs:
         if: matrix.BREW_PACKAGES
         run: brew install ${{matrix.BREW_PACKAGES}}
 
+      # haxe-plus: 4.3.7's PHP runtime predates PHP 8.5, whose float-to-int cast warnings it turns
+      # into exceptions (HAXE-PLUS.md, C4)
+      - name: PHP 8.4
+        if: matrix.target == 'php'
+        run: |
+          brew install php@8.4
+          echo "$(brew --prefix php@8.4)/bin" >> $GITHUB_PATH
+
+      # haxe-plus: 4.3.7 reads Java libraries as JDK 11 compiles them, not as the runner's JDK 21 does (C4)
+      - name: JDK 11
+        if: matrix.target == 'java,jvm'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
       - name: Test
         run: |
           # disable invalid Unicode filenames on APFS
@@ -1115,7 +913,7 @@ jobs:
   # Tests run in the same run but do not hold the upload back: check them before announcing.
   release:
     if: github.event_name == 'release'
-    needs: [linux-build, linux-arm64-build, mac-build-universal, windows-build, windows64-build]
+    needs: [linux-build, linux-arm64-build, mac-build-universal, windows64-build]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -1132,25 +930,22 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           set -ex
-          mkdir assets tmp tmp/win tmp/win64
+          mkdir assets tmp tmp/win64
           cp linuxBinaries/*_bin.tar.gz      "assets/haxe-$TAG-linux64.tar.gz"
           cp linuxArm64Binaries/*_bin.tar.gz "assets/haxe-$TAG-linux-arm64.tar.gz"
           cp macBinaries/*_bin.tar.gz        "assets/haxe-$TAG-osx.tar.gz"
           cp win64Binaries/*_bin.zip         "assets/haxe-$TAG-win64.zip"
-          cp win32Binaries/*_bin.zip         "assets/haxe-$TAG-win.zip"
           # the installer archives hold one file each: the .pkg, the .exe
           tar -xzf macBinaries/*_installer.tar.gz -C tmp
           mv tmp/*.pkg "assets/haxe-$TAG-osx-installer.pkg"
           unzip -j win64Binaries/*_installer.zip -d tmp/win64
           mv tmp/win64/*.exe "assets/haxe-$TAG-win64.exe"
-          unzip -j win32Binaries/*_installer.zip -d tmp/win
-          mv tmp/win/*.exe "assets/haxe-$TAG-win.exe"
           ls -l assets
           gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"
 
   deploy:
     if: success() && github.repository_owner == 'HaxeFoundation' && github.event_name != 'pull_request'
-    needs: [linux-test, linux-arm64-test, mac-test, windows-test, windows64-test]
+    needs: [linux-test, linux-arm64-test, mac-test, windows64-test]
     runs-on: ubuntu-22.04
     steps:
       # this is only needed for to get `COMMIT_DATE`...
@@ -1226,7 +1021,7 @@ jobs:
 
   deploy_apidoc:
     if: success() && github.repository_owner == 'HaxeFoundation' && github.event_name != 'pull_request'
-    needs: [linux-test, linux-arm64-test, mac-test, windows-test, windows64-test]
+    needs: [linux-test, linux-arm64-test, mac-test, windows64-test]
     runs-on: ubuntu-22.04
     steps:
       - name: Install dependencies

@@ -12,7 +12,8 @@ class Lua {
 		switch (systemName){
 			case "Linux":
 				Linux.requireAptPackages(["libpcre2-dev", "libssl-dev", "libreadline-dev"]);
-				runCommand("pip", ["install", "--user", "hererocks"]);
+				// haxe-plus: the released hererocks can no longer fetch LuaJIT 2.0 (HAXE-PLUS.md, C4)
+				runCommand("pip", ["install", "--user", "git+https://github.com/luarocks/hererocks.git"]);
 				final pyUserBase = commandResult("python", ["-m", "site", "--user-base"]).stdout.trim();
 				addToPATH(Path.join([pyUserBase, "bin"]));
 			case "Mac": {
