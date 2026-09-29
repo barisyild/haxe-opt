@@ -566,6 +566,24 @@ release. A build made on a developer's Mac is not a
 package: it needs `MACOSX_DEPLOYMENT_TARGET` (it otherwise requires the build machine's macOS) and
 static pcre2/mbedtls, which is what the CI does.
 
+**Trial run** (2026-09-29, [run 36584012177](https://github.com/barisyild/haxe-plus/actions/runs/36584012177)):
+the Linux x64 and arm64 builds, both mac builds and the universal package passed, and the macro
+tests on every platform; 27 jobs in all. What failed is the environment, which moved since May
+2025, not the compiler:
+- Windows 32 build: `ocaml/setup-ocaml` crashes under the Node.js 24 that runners now force
+  (`Cannot read properties of undefined (reading 'parsedURL')`), and its "second chance" step then
+  finds the half-made switch.
+- Windows 64 build: builds, but the packaging leaves fewer than the three files its check expects
+  (zip, installer, nupkg).
+- cpp tests (Linux x64, arm64, mac) and the doc generation test: the CI installs hxcpp's git master,
+  and `HXCPP_COMPILE_CACHE: ~/hxcache` reaches the linker with the `~` unexpanded
+  (`ld: cannot find ~/hxcache/zlib_sources/lib/...`); an absolute path should do.
+- lua test: `cp: cannot stat 'non-existent-src'` while setting up its dependencies.
+- mac php test: `Issue7533` (`shiftRightUnsigned`) under the runner's newer PHP.
+- mac java/jvm test: the test library's `MyClass_MyAnnotation` is not found (the runner's Java).
+
+To tell these from haxe-plus's own effects, run the same workflow on 4.3.7 with only C1 and C2.
+
 ### C3: packages attached to a published release — job `release` in `.github/workflows/main.yml`
 
 **How upstream releases** (`extra/release-checklist.txt`, and the 4.3.7 release's files): a
