@@ -137,3 +137,7 @@ lib.sexp
 src/compiler/version.ml
 tests/party
 tests/misc/projects/Issue10863/error.log
+
+# haxe-plus: the eval JIT's configuration and cache next to a locally built ./haxe
+/eval-jit.conf
+/jit-cache

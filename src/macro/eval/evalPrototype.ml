@@ -43,7 +43,7 @@ let create_constructor ctx c =
 	match c.cl_constructor with
 	| Some {cf_expr = Some {eexpr = TFunction tf; epos = pos}} when not (has_class_flag c CExtern) ->
 		let key = path_hash c.cl_path in
-		let v = lazy (vfunction (jit_tfunction ctx key key_new tf false pos)) in
+		let v = lazy (vfunction (EvalJitNative.jit_method ctx c key key_new tf false pos)) in
 		ctx.constructors <- IntMap.add key v ctx.constructors;
 	| _ ->
 		()
@@ -197,7 +197,7 @@ let create_static_prototype ctx mt =
 		if not (has_class_flag c CExtern) then List.iter (fun cf -> match cf.cf_kind,cf.cf_expr with
 			| Method _,Some {eexpr = TFunction tf; epos = pos} ->
 				let name = hash cf.cf_name in
-				PrototypeBuilder.add_proto_field pctx name (lazy (vstatic_function (jit_tfunction ctx key name tf true pos)));
+				PrototypeBuilder.add_proto_field pctx name (lazy (vstatic_function (EvalJitNative.jit_method ctx c key name tf true pos)));
 			| Var _,Some e ->
 				let name = hash cf.cf_name in
 				PrototypeBuilder.add_proto_field pctx name (lazy vnull);
@@ -272,7 +272,7 @@ let create_instance_prototype ctx c =
 	else List.iter (fun cf -> match cf.cf_kind,cf.cf_expr with
 		| Method meth,Some {eexpr = TFunction tf; epos = pos} ->
 			let name = hash cf.cf_name in
-			let v = lazy (vfunction (jit_tfunction ctx key name tf false pos)) in
+			let v = lazy (vfunction (EvalJitNative.jit_method ctx c key name tf false pos)) in
 			if meth = MethDynamic then PrototypeBuilder.add_instance_field pctx name v;
 			PrototypeBuilder.add_proto_field pctx name v
 		| Var _,_ when is_physical_field cf ->
@@ -354,6 +354,8 @@ let add_types ctx types ready =
 		| _ ->
 			()
 	) new_types;
+	(* Natively compile what can be, now that the prototypes exist and before any function is. *)
+	EvalJitNative.prepare ctx new_types;
 	(* 2. Create instance fields. *)
 	DynArray.iter (fun (proto,f) -> ignore(f proto)) fl_instance;
 	(* 3. Create static fields. *)
