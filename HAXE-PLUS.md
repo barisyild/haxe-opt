@@ -626,7 +626,9 @@ the run's tests before announcing. The tag's commit must contain this workflow.
   failing command, where a failure used to surface only at the artifact check. The mac builds pin
   luv 0.5.13: they pin ctypes 0.21.1, with which 0.5.14 does not compile.
 - HashLink: the tests build HashLink 1.15, the release 4.3.7 came out with, instead of master,
-  which crashes on 4.3.7's output on Windows (`hl.exe bin/unit.hl`, 0xC0000028).
+  which crashes on 4.3.7's output on Windows (`hl.exe bin/unit.hl`, 0xC0000028). HashLink 1.15
+  does not configure with the Visual Studio 2026 of `windows-latest` (now `windows-2025-vs2026`),
+  so the Windows tests run on `windows-2022`, as 4.3.7's did.
 - `HXCPP_COMPILE_CACHE` is `${{ github.workspace }}/hxcache` in every test job: hxcpp passes the
   `~` of `~/hxcache` to the linker as it is.
 - Lua: hererocks is installed from its git repository with pipx (as upstream does): the released

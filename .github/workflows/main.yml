@@ -689,7 +689,9 @@ jobs:
 
   windows64-test:
     needs: windows64-build
-    runs-on: windows-latest
+    # haxe-plus: Visual Studio 2022, as when 4.3.7 was released: HashLink 1.15 does not configure
+    # with the 2026 of windows-latest (HAXE-PLUS.md, C4)
+    runs-on: windows-2022
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
       PLATFORM: windows64
