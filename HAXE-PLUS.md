@@ -197,8 +197,13 @@ tests (3); the whole set ran at checkpoints along the way and on the final state
    suite runs with `EXISTS=1` as RunCi does; on APFS, file names with invalid Unicode cannot exist,
    so the script comments out `-D TEST_INVALID_UNICODE_FS` in `tests/sys/compile-fs.hxml` for the
    run, as that file says to.
-   **Not run yet:** tests/display, tests/server (the JIT under the compilation server is untested),
-   tests/optimization, the other targets' suites.
+   The compilation server's tests (tests/server, 446 assertions) pass in the same three modes (JIT
+   off 16 s, defaults 17 s, strict 36 s). Run them outside any directory with a local `.haxelib`,
+   which would hide `HAXELIB_PATH`: copy tests/server and tests/display next to each other, add
+   hxnodejs, haxeserver and utest to the repository, then `haxe build.hxml && node test.js` in
+   server/; with the JIT's variables set, the spawned servers inherit them.
+   **Not run yet:** tests/display, tests/optimization, the other targets' suites (the CI runs those
+   with the JIT off).
 3. **Differential tests**: `extra/haxe-plus/tests/run.sh ./haxe` runs each program with the JIT off
    and on (strict) and compares with the output the release's semantics give. `jit-smoke` covers
    the language constructs the JIT compiles; `big-arrays` the R12 paths (arrays past 256 elements:
@@ -726,7 +731,7 @@ In the order of what they may be worth:
    ocamlopt of the switch that built the binary, the .cmi/.cmx snapshot and a C toolchain; a
    relocatable eval-jit.conf and bundled ocamlopt and libraries would bring package users from ~90 s
    to 40 s on the benchmark. Windows is untested (pruning uses `rm -rf`).
-6. **Coverage**: run tests/display, tests/server (the JIT under `--wait`/`--connect`), tests/optimization.
+6. **Coverage**: run tests/display and tests/optimization with the JIT.
 7. **The first compilation of a heavy project** runs closure-compiled (J2): 82 s instead of 44 s on
    the reflaxe.CPP build, once per project and cache. Removing it needs promotion within the run:
    functions behind a stable function value whose body is swapped once the project turns heavy
