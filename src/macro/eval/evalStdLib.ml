@@ -76,9 +76,9 @@ module StdEvalVector = struct
 		let this = this vthis in
 		let a = match f with
 			| VFunction(f,_) ->
-				Array.map (fun v -> f [v]) this
+				EvalArray.map_values (fun v -> f [v]) this
 			| VFieldClosure(v1,f) ->
-				Array.map (fun v -> f (v1 :: [v])) this
+				EvalArray.map_values (fun v -> f (v1 :: [v])) this
 			| _ -> exc_string ("Cannot call " ^ (value_string f))
 		in
 		encode_vector_instance a
@@ -1228,7 +1228,7 @@ module StdFileSystem = struct
 		with Sys_error s ->
 			exc_string s
 		in
-		encode_array (Array.to_list (Array.map (fun s -> create_unknown s) d))
+		encode_array (Array.to_list (EvalArray.map_values (fun s -> create_unknown s) d))
 	)
 
 	let rename = vfun2 (fun path newPath ->
@@ -2315,7 +2315,10 @@ module StdString = struct
 					DynArray.add acc (encode_range b_index (bl_this - b_index) (this.slength - c_index))
 			in
 			loop 0 0;
-			encode_array_instance (EvalArray.create (DynArray.to_array acc))
+			(* DynArray.to_array starts from the first value: see EvalArray.map_values *)
+			let a = Array.make (DynArray.length acc) vnull in
+			DynArray.iteri (fun i v -> Array.unsafe_set a i v) acc;
+			encode_array_instance (EvalArray.create a)
 		end
 	)
 

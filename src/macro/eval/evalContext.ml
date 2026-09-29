@@ -323,7 +323,7 @@ let s_debug_state = function
 
 (* Misc *)
 
-let get_eval ctx =
+let get_other_eval ctx =
 	let id = Thread.id (Thread.self()) in
 	if id = 0 then
 		ctx.eval
@@ -332,6 +332,16 @@ let get_eval ctx =
 			IntMap.find id ctx.evals
 		with Not_found ->
 			die "Cannot run Haxe code in a non-Haxe thread" __LOC__
+
+(* Modules are initialized on the main thread, the one with id 0. Comparing its descriptor
+   physically is one C call less than asking for the id, on every Haxe call. *)
+let main_thread = Thread.self()
+
+let[@inline] get_eval ctx =
+	if Thread.self() == main_thread then
+		ctx.eval
+	else
+		get_other_eval ctx
 
 
 let rec kind_name eval kind =
@@ -544,7 +554,7 @@ let get_instance_field_index proto name p =
 
 let is v path =
 	if path = key_Dynamic then
-		v <> vnull
+		v != vnull
 	else match v with
 	| VInt32 _ -> path = key_Int || path = key_Float
 	| VFloat f -> path = key_Float || (path = key_Int && f = (float_of_int (int_of_float f)) && f <= 2147483647. && f >= -2147483648.)
@@ -558,7 +568,7 @@ let is v path =
 	| VInstance vi ->
 		let has_interface path' =
 			try begin match (get_static_prototype_raise (get_ctx()) path').pkind with
-				| PClass interfaces -> List.mem path interfaces
+				| PClass interfaces -> List.exists (fun (i : int) -> i = path) interfaces
 				| _ -> false
 			end with Not_found ->
 				false

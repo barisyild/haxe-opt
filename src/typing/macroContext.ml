@@ -31,6 +31,8 @@ module Eval = struct
 	include EvalValue
 	include EvalContext
 	include EvalMain
+	(* The macro API only encodes the compiler's own strings: see EvalEncode.encode_string_cached. *)
+	let encode_string = EvalEncode.encode_string_cached
 end
 
 module InterpImpl = Eval (* Hlmacro *)

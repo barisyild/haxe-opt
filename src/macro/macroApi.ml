@@ -630,16 +630,16 @@ and encode_function_kind kind =
 (* EXPR DECODING *)
 
 let opt f v =
-	if v = vnull then None else Some (f v)
+	if v == vnull then None else Some (f v)
 
 let opt_list f v =
-	if v = vnull then [] else f v
+	if v == vnull then [] else f v
 
 let decode_opt_bool v =
-	if v = vnull then false else decode_bool v
+	if v == vnull then false else decode_bool v
 
 let decode_string_literal_kind v =
-	if v = vnull then SDoubleQuotes else match decode_enum v with
+	if v == vnull then SDoubleQuotes else match decode_enum v with
 	| 0,[] -> SDoubleQuotes
 	| 1,[] -> SSingleQuotes
 	| _ -> raise Invalid_expr
@@ -722,7 +722,7 @@ let decode_placed_name vp v =
 	decode_string v,maybe_decode_pos vp
 
 let decode_opt_array f v =
-	if v = vnull then [] else List.map f (decode_array v)
+	if v == vnull then [] else List.map f (decode_array v)
 
 (* Ast.placed_type_path *)
 let rec decode_ast_path t =
@@ -731,7 +731,7 @@ let rec decode_ast_path t =
 	and name = decode_string (field t "name")
 	and params = decode_opt_array decode_tparam (field t "params")
 	and sub = opt decode_string (field t "sub") in
-	mk_type_path ~params ?sub (pack,name), if p = vnull then Globals.null_pos else decode_pos p
+	mk_type_path ~params ?sub (pack,name), if p == vnull then Globals.null_pos else decode_pos p
 
 and decode_tparam v =
 	match decode_enum v with
@@ -747,7 +747,7 @@ and decode_tparam_decl v =
 	let vdefault = field v "defaultType" in
 	{
 		tp_name = decode_placed_name (field v "name_pos") (field v "name");
-		tp_constraints = if vconstraints = vnull then None else (match decode_array vconstraints with
+		tp_constraints = if vconstraints == vnull then None else (match decode_array vconstraints with
 			| [] -> None
 			| [t] -> Some (decode_ctype t)
 			| tl -> Some (CTIntersection (List.map decode_ctype tl),Globals.null_pos)
@@ -849,7 +849,7 @@ and decode_display_kind v = match (decode_enum v) with
 	| 4, [outermost] -> DKPattern (decode_bool outermost)
 	| _ -> raise Invalid_expr
 
-and decode_function_kind kind = if kind = vnull then FKAnonymous else match decode_enum kind with
+and decode_function_kind kind = if kind == vnull then FKAnonymous else match decode_enum kind with
 	| 0, [] -> FKAnonymous
 	| 1, [name;inline] -> FKNamed ((decode_string name,Globals.null_pos), decode_opt_bool inline)
 	| 2, [] -> FKArrow
@@ -882,7 +882,7 @@ and decode_expr v =
 			EObjectDecl (List.map (fun o ->
 				let name,p = decode_placed_name (field o "name_pos") (field o "field") in
 				let vquotes = field o "quotes" in
-				let quotes = if vquotes = vnull then NoQuotes
+				let quotes = if vquotes == vnull then NoQuotes
 				else match decode_enum vquotes with
 					| 0,[] -> NoQuotes
 					| 1,[] -> DoubleQuotes
@@ -978,50 +978,61 @@ let vopt f v = match v with
 	| None -> vnull
 	| Some v -> f v
 
+(* Meta.strict_meta's equality without the generic comparison primitive, a C call: the only
+   constructors with arguments carry a string. *)
+let meta_equal (a : Meta.strict_meta) (b : Meta.strict_meta) = match a,b with
+	| Meta.Custom s1,Meta.Custom s2 | Meta.Dollar s1,Meta.Dollar s2 -> String.equal s1 s2
+	| (Meta.Custom _ | Meta.Dollar _),_ | _,(Meta.Custom _ | Meta.Dollar _) -> false
+	| _ -> a == b
+
 let encode_meta m set =
 	let meta = ref m in
+	(* Defined together so that the five functions share one closure. *)
+	let rec get () =
+		encode_meta_content (!meta)
+	and add k vl p =
+		(try
+			let el = List.map decode_expr (decode_array vl) in
+			meta := (Meta.from_string (decode_string k), el, decode_pos p) :: !meta;
+			set (!meta)
+		with Invalid_expr ->
+			failwith "Invalid expression");
+		vnull
+	and extract k =
+		let k = Meta.from_string (decode_string k) in
+		encode_and_map_array encode_meta_entry (List.filter (fun (m,_,_) -> meta_equal m k) (!meta))
+	and remove k =
+		let k = Meta.from_string (decode_string k) in
+		meta := List.filter (fun (m,_,_) -> not (meta_equal m k)) (!meta);
+		set (!meta);
+		vnull
+	and has k =
+		let k = Meta.from_string (decode_string k) in
+		vbool (List.exists (fun (m,_,_) -> meta_equal m k) (!meta))
+	in
 	encode_obj [
-		"get", vfun0 (fun() ->
-			encode_meta_content (!meta)
-		);
-		"add", vfun3 (fun k vl p ->
-			(try
-				let el = List.map decode_expr (decode_array vl) in
-				meta := (Meta.from_string (decode_string k), el, decode_pos p) :: !meta;
-				set (!meta)
-			with Invalid_expr ->
-				failwith "Invalid expression");
-			vnull
-		);
-		"extract", vfun1 (fun k ->
-			let k = Meta.from_string (decode_string k) in
-			encode_and_map_array encode_meta_entry (List.filter (fun (m,_,_) -> m = k) (!meta))
-		);
-		"remove", vfun1 (fun k ->
-			let k = Meta.from_string (decode_string k) in
-			meta := List.filter (fun (m,_,_) -> m <> k) (!meta);
-			set (!meta);
-			vnull
-		);
-		"has", vfun1 (fun k ->
-			let k = Meta.from_string (decode_string k) in
-			vbool (List.exists (fun (m,_,_) -> m = k) (!meta));
-		);
+		"get", vfun0 get;
+		"add", vfun3 add;
+		"extract", vfun1 extract;
+		"remove", vfun1 remove;
+		"has", vfun1 has;
 	]
 
 let rec encode_mtype t fields =
 	let i = t_infos t in
-	encode_obj ([
-		"__t", 	encode_tdecl t;
-		"pack", encode_array (List.map encode_string (fst i.mt_path));
-		"name", encode_string (snd i.mt_path);
-		"pos", encode_pos i.mt_pos;
-		"module", encode_string (s_type_path i.mt_module.m_path);
-		"isPrivate", vbool i.mt_private;
-		"meta", encode_meta i.mt_meta (fun m -> i.mt_meta <- m);
-		"doc", null encode_string (get_own_doc_opt i.mt_doc);
-		"params", encode_type_params i.mt_params;
-	] @ fields)
+	(* Consed onto [fields] rather than appended: the same list, built in the same order as a list
+	   literal (last element first), without copying it. *)
+	encode_obj (
+		("__t", 	encode_tdecl t) ::
+		("pack", encode_array (List.map encode_string (fst i.mt_path))) ::
+		("name", encode_string (snd i.mt_path)) ::
+		("pos", encode_pos i.mt_pos) ::
+		("module", encode_string (s_type_path i.mt_module.m_path)) ::
+		("isPrivate", vbool i.mt_private) ::
+		("meta", encode_meta i.mt_meta (fun m -> i.mt_meta <- m)) ::
+		("doc", null encode_string (get_own_doc_opt i.mt_doc)) ::
+		("params", encode_type_params i.mt_params) ::
+		fields)
 
 and encode_type_params tl =
 	encode_array (List.map (fun tp ->
@@ -1259,7 +1270,7 @@ and decode_type t =
 	| 3, [t; pl] -> TType (decode_ref t, List.map decode_type (decode_array pl))
 	| 4, [pl; r] -> TFun (List.map (fun p -> decode_string (field p "name"), decode_bool (field p "opt"), decode_type (field p "t")) (decode_array pl), decode_type r)
 	| 5, [a] -> TAnon (decode_ref a)
-	| 6, [t] -> if t = vnull then t_dynamic else TDynamic (Some (decode_type t))
+	| 6, [t] -> if t == vnull then t_dynamic else TDynamic (Some (decode_type t))
 	| 7, [f] -> TLazy (decode_lazytype f)
 	| 8, [a; pl] -> TAbstract (decode_ref a, List.map decode_type (decode_array pl))
 	| _ -> raise Invalid_expr
@@ -1495,7 +1506,7 @@ let decode_field_access v =
 	| 2, [cf] -> FAnon(decode_ref cf)
 	| 3, [s] -> FDynamic(decode_string s)
 	| 4, [co;cf] ->
-		let co = if co = vnull then None else Some (decode_ref (field co "c"),List.map decode_type (decode_array (field co "params"))) in
+		let co = if co == vnull then None else Some (decode_ref (field co "c"),List.map decode_type (decode_array (field co "params"))) in
 		FClosure(co,decode_ref cf)
 	| 5, [e;ef] -> FEnum(decode_ref e,decode_efield ef)
 	| _ -> raise Invalid_expr
@@ -1766,7 +1777,7 @@ let macro_api ccom get_api =
 			let s = decode_string s in
 			let com = ccom() in
 			(* TODO: use external_define and external_define_value for #8690 *)
-			if v = vnull then
+			if v == vnull then
 				Common.external_define_no_check com s
 			else
 				Common.external_define_value_no_check com s (decode_string v);
