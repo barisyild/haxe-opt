@@ -24,9 +24,36 @@ let create values = {
 	alength = Array.length values;
 }
 
+(* OCaml makes the result of Array.map, Array.init and Array.of_list with Array.make and the first
+   value, and Array.make forces a minor collection when that value is young and the array is longer
+   than Max_young_wosize (256 words): the whole young heap is promoted, once for every such array.
+   With a large minor heap that is most of the collector's work. The functions below build those
+   arrays from nulls instead, calling [f] on the same values in the same order. *)
+let max_young_wosize = 256
+
+let map_values (f : 'a -> value) (a : 'a array) : value array =
+	let n = Array.length a in
+	if n <= max_young_wosize then
+		Array.map f a
+	else begin
+		let r = Array.make n vnull in
+		for i = 0 to n - 1 do
+			Array.unsafe_set r i (f (Array.unsafe_get a i))
+		done;
+		r
+	end
+
 let array_join a f sep =
-	let l = Array.map f a in
-	let l = Array.to_list l in
+	let n = Array.length a in
+	let l = if n <= max_young_wosize then
+		Array.to_list (Array.map f a)
+	else begin
+		let acc = ref [] in
+		for i = 0 to n - 1 do
+			acc := f (Array.unsafe_get a i) :: !acc
+		done;
+		List.rev !acc
+	end in
 	EvalString.join sep l
 
 let to_list a = Array.to_list (Array.sub a.avalues 0 a.alength)
@@ -56,7 +83,30 @@ let copy a =
 	create (Array.sub a.avalues 0 a.alength)
 
 let filter a f =
-	create (ExtArray.Array.filter f (Array.sub a.avalues 0 a.alength))
+	let values = Array.sub a.avalues 0 a.alength in
+	let n = Array.length values in
+	if n <= max_young_wosize then
+		create (ExtArray.Array.filter f values)
+	else begin
+		(* ExtArray's filter: [f] on every value in order, then the kept ones copied out *)
+		let keep = Bytes.make n '\000' in
+		let count = ref 0 in
+		for i = 0 to n - 1 do
+			if f (Array.unsafe_get values i) then begin
+				Bytes.unsafe_set keep i '\001';
+				incr count
+			end
+		done;
+		let r = Array.make !count vnull in
+		let j = ref 0 in
+		for i = 0 to n - 1 do
+			if Bytes.unsafe_get keep i <> '\000' then begin
+				Array.unsafe_set r !j (Array.unsafe_get values i);
+				incr j
+			end
+		done;
+		create r
+	end
 
 let get a i =
 	if i < 0 || i >= a.alength then vnull
@@ -106,7 +156,7 @@ let lastIndexOf a equals x fromIndex =
 	if a.alength = 0 then -1 else loop fromIndex
 
 let map a f =
-	create (Array.map f (Array.sub a.avalues 0 a.alength))
+	create (map_values f (Array.sub a.avalues 0 a.alength))
 
 let pop a =
 	if a.alength = 0 then
@@ -179,7 +229,8 @@ let sort a f =
 	Array.sort f a.avalues
 
 let splice a pos len end' =
-	let values' = Array.init len (fun i -> Array.get a.avalues (pos + i)) in
+	(* StdArray.splice keeps pos and len within the array, so this is Array.sub *)
+	let values' = if len <= max_young_wosize then Array.init len (fun i -> Array.get a.avalues (pos + i)) else Array.sub a.avalues pos len in
 	Array.blit a.avalues (pos + len) a.avalues pos (a.alength - end');
 	a.alength <- a.alength - len;
 	create values'

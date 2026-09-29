@@ -287,18 +287,107 @@ let create_instance_prototype ctx c =
 	) fields;
 	PrototypeBuilder.finalize pctx
 
+(* get_object_prototype runs for every object the macro API encodes, and sorting the fields,
+   formatting the prototype's name, hashing it and finding the prototype was a large part of
+   macro-heavy compilations. Objects are built from few shapes (the field hashes in the order they
+   come in), so each shape remembers what does not change:
+   - the order that sorts its fields, found by sorting (hash, position) pairs the way the fields
+     are sorted, so it is List.sort's order even for equal hashes;
+   - the prototype's name, with the field names as rev_hash returned them: used only while
+     rev_hash still returns those very strings, so the name is the one that would be built, and
+     registered again as hashing it would;
+   - the prototype, for one context, one name and the very map of prototypes it was found in: any
+     change to them means looking again.
+   Cached parts are immutable values replaced in one write, so eval threads cannot see half an
+   update. *)
+type object_shape = {
+	os_keys : int array;
+	os_order : int array;
+	mutable os_name : (string list * string * int * int) option; (* names, name, hash, EvalHash.collisions *)
+	mutable os_proto : (int * vprototype IntMap.t * int * vprototype) option;
+}
+
+let object_shapes : object_shape list array = Array.make 4096 []
+
+let rec shape_hash h l = match l with
+	| [] -> h land 4095
+	| (k,_) :: l -> shape_hash (h * 31 + k) l
+
+let shape_matches keys l =
+	let n = Array.length keys in
+	let rec loop i l = match l with
+		| [] -> i = n
+		| (k,_) :: l -> i < n && Array.unsafe_get keys i = k && loop (i + 1) l
+	in
+	loop 0 l
+
+let rec find_shape shapes l = match shapes with
+	| [] -> None
+	| sh :: shapes -> if shape_matches sh.os_keys l then Some sh else find_shape shapes l
+
+let object_shape l =
+	let h = shape_hash 7 l in
+	let bucket = Array.unsafe_get object_shapes h in
+	match find_shape bucket l with
+	| Some sh ->
+		sh
+	| None ->
+		let keys = Array.of_list (List.map fst l) in
+		let indexed = List.mapi (fun i (k,_) -> (k,i)) l in
+		let sorted = List.sort (fun (i1,_) (i2,_) -> if i1 = i2 then 0 else if i1 < i2 then -1 else 1) indexed in
+		let sh = {
+			os_keys = keys;
+			os_order = Array.of_list (List.map snd sorted);
+			os_name = None;
+			os_proto = None;
+		} in
+		Array.unsafe_set object_shapes h (sh :: (match bucket with a :: b :: c :: d :: e :: f :: g :: _ -> [a;b;c;d;e;f;g] | _ -> bucket));
+		sh
+
+let object_prototype_name sh l =
+	let build () =
+		let names = List.map (fun (i,_) -> rev_hash i) l in
+		let sfields = String.concat "," (List.map (fun s -> Printf.sprintf ":%s" s) names) in
+		let sname = Printf.sprintf "eval.object.Object[%s]" sfields in
+		let name = hash sname in
+		sh.os_name <- Some (names,sname,name,!EvalHash.collisions);
+		name
+	in
+	match sh.os_name with
+	| Some (_,_,name,stamp) when stamp = !EvalHash.collisions ->
+		(* No name displaced another since: rev_hash returns the same strings and the prototype's
+		   name is still registered. *)
+		name
+	| Some (names,sname,name,_) when List.for_all2 (fun (i,_) s -> rev_hash i == s) l names ->
+		EvalHash.register name sname;
+		sh.os_name <- Some (names,sname,name,!EvalHash.collisions);
+		name
+	| _ ->
+		build ()
+
 let get_object_prototype ctx l =
-	let l = List.sort (fun (i1,_) (i2,_) -> if i1 = i2 then 0 else if i1 < i2 then -1 else 1) l in
-	let proto =
-		let sfields = String.concat "," (List.map (fun (i,_) -> (Printf.sprintf ":%s" (rev_hash i))) l) in
-		let name = hash (Printf.sprintf "eval.object.Object[%s]" sfields) in
-		try
-			IntMap.find name ctx.instance_prototypes
-		with Not_found ->
-			let pctx = PrototypeBuilder.create ctx name None PObject None in
-			List.iter (fun (name,_) -> PrototypeBuilder.add_instance_field pctx name (lazy vnull)) l;
-			let proto = fst (PrototypeBuilder.finalize pctx) in
-			ctx.instance_prototypes <- IntMap.add name proto ctx.instance_prototypes;
+	let sh = object_shape l in
+	let l =
+		let a = Array.of_list l in
+		let order = sh.os_order in
+		let rec build j acc = if j < 0 then acc else build (j - 1) (Array.unsafe_get a (Array.unsafe_get order j) :: acc) in
+		build (Array.length order - 1) []
+	in
+	let name = object_prototype_name sh l in
+	let proto = match sh.os_proto with
+		| Some (id,map,name',proto) when id = ctx.ctx_id && name' = name && map == ctx.instance_prototypes ->
+			proto
+		| _ ->
+			let proto = try
+				IntMap.find name ctx.instance_prototypes
+			with Not_found ->
+				let pctx = PrototypeBuilder.create ctx name None PObject None in
+				List.iter (fun (name,_) -> PrototypeBuilder.add_instance_field pctx name (lazy vnull)) l;
+				let proto = fst (PrototypeBuilder.finalize pctx) in
+				ctx.instance_prototypes <- IntMap.add name proto ctx.instance_prototypes;
+				proto
+			in
+			sh.os_proto <- Some (ctx.ctx_id,ctx.instance_prototypes,name,proto);
 			proto
 	in
 	proto,l

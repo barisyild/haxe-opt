@@ -531,7 +531,7 @@ let get_instance_field_index proto name p =
 
 let is v path =
 	if path = key_Dynamic then
-		v <> vnull
+		v != vnull
 	else match v with
 	| VInt32 _ -> path = key_Int || path = key_Float
 	| VFloat f -> path = key_Float || (path = key_Int && f = (float_of_int (int_of_float f)) && f <= 2147483647. && f >= -2147483648.)
@@ -545,7 +545,7 @@ let is v path =
 	| VInstance vi ->
 		let has_interface path' =
 			try begin match (get_static_prototype_raise (get_ctx()) path').pkind with
-				| PClass interfaces -> List.mem path interfaces
+				| PClass interfaces -> List.exists (fun (i : int) -> i = path) interfaces
 				| _ -> false
 			end with Not_found ->
 				false

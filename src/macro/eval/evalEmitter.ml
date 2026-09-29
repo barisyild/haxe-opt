@@ -122,7 +122,7 @@ let emit_object_declaration proto fa env =
 	}
 
 let emit_array_declaration execs env =
-	let vl = Array.map (apply env) execs in
+	let vl = EvalArray.map_values (apply env) execs in
 	encode_array_instance (EvalArray.create vl)
 
 let emit_type_expr proto env = proto

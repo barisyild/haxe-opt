@@ -38,8 +38,20 @@ let empty_string = create_ascii ""
 
 let v_empty_string = VString empty_string
 
+(* Whether [s] is ASCII from [i] on, eight bytes at a time. *)
+let rec is_ascii s i n =
+	if i + 8 <= n then
+		Int64.logand (String.get_int64_ne s i) 0x8080808080808080L = 0L && is_ascii s (i + 8) n
+	else if i < n then
+		Char.code (String.unsafe_get s i) < 0x80 && is_ascii s (i + 1) n
+	else
+		true
+
+(* An ASCII string (most are) has as many characters as bytes, which is what UTF8.length counts for
+   it, one byte at a time. *)
 let create_unknown_vstring s =
-	create_with_length s (try UTF8.length s with _ -> String.length s)
+	let n = String.length s in
+	create_with_length s (if is_ascii s 0 n then n else try UTF8.length s with _ -> n)
 
 let create_unknown s =
 	vstring (create_unknown_vstring s)

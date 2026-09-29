@@ -25,6 +25,12 @@ open Typecore
 open Error
 open Globals
 
+module Eval = struct
+	include Eval
+	(* The macro API only encodes the compiler's own strings: see EvalEncode.encode_string_cached. *)
+	let encode_string = EvalEncode.encode_string_cached
+end
+
 module InterpImpl = Eval (* Hlmacro *)
 
 module Interp = struct

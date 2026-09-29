@@ -17,14 +17,59 @@
 	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
-let reverse_map = Hashtbl.create 0
+(* Hashed names back to names. Keyed by ints: a table specialised to them avoids the generic
+   hashing and comparison primitives, which are C calls. *)
+module IntTbl = Hashtbl.Make(struct
+	type t = int
+	let equal (a : int) b = a = b
+	let hash (i : int) = i land max_int
+end)
 
-let rev_hash i = Hashtbl.find reverse_map i
+let reverse_map : string IntTbl.t = IntTbl.create 0x4000
+
+let rev_hash i = IntTbl.find reverse_map i
+
+(* How many times a name took the place of a different name under the same hash. While it stays
+   put, a name that was registered once is still what rev_hash returns. *)
+let collisions = ref 0
+
+(* Makes [f] the name of [i]. When [i] already has that name the table is left alone: rev_hash
+   returns an equal string either way, and rewriting the entry cost two write barriers per call. *)
+let set_name i f =
+	match IntTbl.find_opt reverse_map i with
+	| Some f' when f' == f || String.equal f' f -> ()
+	| Some _ -> incr collisions; IntTbl.replace reverse_map i f
+	| None -> IntTbl.replace reverse_map i f
+
+(* The hash of a string, remembered for the string itself (compared physically): names are hashed
+   over and over from the same constants and compiler strings. An entry also records [collisions]
+   as it was when the name was registered: if nothing has displaced a name since, it is still
+   registered and there is nothing to do. A direct-mapped table of immutable triples, so one write
+   replaces an entry whole. *)
+let hash_cache = Array.make 4096 ("",Hashtbl.hash "",-1)
 
 let hash f =
-	let i = Hashtbl.hash f in
-	Hashtbl.replace reverse_map i f;
-	i
+	let n = String.length f in
+	if n = 0 then begin
+		let i = Hashtbl.hash f in
+		set_name i f;
+		i
+	end else begin
+		let h = (n + 31 * Char.code (String.unsafe_get f 0) + 961 * Char.code (String.unsafe_get f (n - 1))) land 4095 in
+		let (f',i,stamp) = Array.unsafe_get hash_cache h in
+		if f' == f && stamp = !collisions then
+			i
+		else begin
+			let i = if f' == f then i else Hashtbl.hash f in
+			set_name i f;
+			Array.unsafe_set hash_cache h (f,i,!collisions);
+			i
+		end
+	end
+
+(* Records a name known to hash to [i], as [hash] would. *)
+let register i f =
+	set_name i f
 
 let path_hash path = hash (Globals.s_type_path path)
 
