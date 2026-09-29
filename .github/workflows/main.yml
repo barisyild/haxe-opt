@@ -2,9 +2,12 @@
 # TODO: support skip ci (https://github.community/t/github-actions-does-not-respect-skip-ci/17325/8)
 
 name: CI
-# haxe-plus: run by hand (Actions > CI > Run workflow), not on every push (HAXE-PLUS.md, C1).
+# haxe-plus: run by hand (Actions > CI > Run workflow), not on every push (HAXE-PLUS.md, C1), and
+# for a published release, whose packages the release job then attaches (HAXE-PLUS.md, C3).
 on:
   workflow_dispatch:
+  release:
+    types: [published]
 
 env:
   OCAML_VERSION: 5.3.0
@@ -859,6 +862,39 @@ jobs:
         working-directory: ${{github.workspace}}/tests
         timeout-minutes: 60
 
+
+  # haxe-plus: attach the packages to a published release (HAXE-PLUS.md, C3).
+  release:
+    if: github.event_name == 'release'
+    needs: [linux-build, linux-arm64-build, mac-build-universal, windows64-build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+
+      # Named and unpacked as upstream's release tool does (Simn/hxgithub, scripts/release): upstream
+      # runs it by hand, downloading from its build server what the deploy job uploaded there.
+      - name: Attach the packages to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -ex
+          mkdir assets tmp tmp/win64
+          cp linuxBinaries/*_bin.tar.gz      "assets/haxe-$TAG-linux64.tar.gz"
+          cp linuxArm64Binaries/*_bin.tar.gz "assets/haxe-$TAG-linux-arm64.tar.gz"
+          cp macBinaries/*_bin.tar.gz        "assets/haxe-$TAG-osx.tar.gz"
+          cp win64Binaries/*_bin.zip         "assets/haxe-$TAG-win64.zip"
+          # the installer archives hold one file each: the .pkg, the .exe
+          tar -xzf macBinaries/*_installer.tar.gz -C tmp
+          mv tmp/*.pkg "assets/haxe-$TAG-osx-installer.pkg"
+          unzip -j win64Binaries/*_installer.zip -d tmp/win64
+          mv tmp/win64/*.exe "assets/haxe-$TAG-win64.exe"
+          ls -l assets
+          gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"
 
   deploy:
     if: success() && github.repository_owner == 'HaxeFoundation' && github.event_name != 'pull_request'

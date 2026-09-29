@@ -1,9 +1,12 @@
 # TODO: support skip ci (https://github.community/t/github-actions-does-not-respect-skip-ci/17325/8)
 
 name: CI
-# haxe-plus: run by hand (Actions > CI > Run workflow), not on every push (HAXE-PLUS.md, C1).
+# haxe-plus: run by hand (Actions > CI > Run workflow), not on every push (HAXE-PLUS.md, C1), and
+# for a published release (C3).
 on:
   workflow_dispatch:
+  release:
+    types: [published]
 
 env:
   OCAML_VERSION: 5.3.0
