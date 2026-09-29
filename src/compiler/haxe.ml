@@ -43,6 +43,21 @@
 *)
 open Server
 
+(* The compiler allocates at a high rate, and macros make it much higher: encoding the typed AST for
+   eval allocates gigabytes of values that die almost at once. With OCaml's default minor heap
+   (256k words) most of them live just long enough to be promoted, and the major collector then
+   marks and sweeps them over a heap of several gigabytes. A larger minor heap lets them die young,
+   and a larger space overhead makes the major collector run less often. Measured on a large
+   reflaxe.CPP build (eval JIT on, and without the minor collections Array.make used to force, see
+   EvalArray.map_values): 32M words (256MB, pages touched only as used) are the fastest now, 2%
+   ahead of both 16M and 64M words, and a space overhead of 600 takes about 9% off 200 (400 takes
+   5%; 800 was no faster and grew the heap further), for a larger heap but no larger resident set.
+   Left alone when OCAMLRUNPARAM or CAMLRUNPARAM is set, so the GC can still be tuned from outside. *)
+let () =
+	match Sys.getenv_opt "OCAMLRUNPARAM",Sys.getenv_opt "CAMLRUNPARAM" with
+	| None,None -> Gc.set { (Gc.get()) with Gc.minor_heap_size = 32 * 1024 * 1024; Gc.space_overhead = 600 }
+	| _ -> ()
+
 ;;
 Sys.catch_break true;
 
