@@ -192,8 +192,9 @@ tests (3); the whole set ran at checkpoints along the way and on the final state
 The commits of each branch follow these groups, so each can be taken on its own:
 "eval: native JIT" (J), "eval: exact run-time caches and fewer allocations" (R1–R12),
 "compiler: GC settings for macro-heavy builds" (G1), "ci: run the CI workflow by hand only" (C1),
-"haxe-plus: documentation, scripts, differential tests", and "ci: runners and OCaml 4.14 for every
-build" (C2). The code comments at each change repeat the essentials.
+"haxe-plus: documentation, scripts, differential tests", "ci: runners and OCaml 4.14 for every
+build" (C2) and "ci: attach the packages to a published release" (C3). The code comments at each
+change repeat the essentials.
 
 ### J: native JIT — `src/macro/eval/evalJitNative.ml`, `evalJitRt.ml`
 
@@ -483,9 +484,9 @@ the OCaml version (OCaml 5's GC differs).
 ### C1: CI by hand — `.github/workflows/main.yml`, `extra/github-actions/workflows/main.yml`
 
 **What.** Haxe's own CI workflow ran its whole matrix on every push and pull request; on haxe-plus
-branches it runs only when started from the Actions tab (`workflow_dispatch`). Changed in the
-template and in the file generated from it. It still builds and tests the base release's targets,
-with the JIT off (no eval-jit.conf there).
+branches it runs only when started from the Actions tab (`workflow_dispatch`), or for a published
+release (C3). Changed in the template and in the file generated from it. It builds and tests the
+base release's targets, with the JIT off (no eval-jit.conf there).
 
 ### C2: CI runners and OCaml versions — `.github/workflows/main.yml`
 
@@ -503,10 +504,37 @@ generated file, and never regenerate it from the template.
 x64/arm64 tar.gz, macOS universal tar.gz and installer) and keeps them as the run's artifacts;
 upstream's `deploy` job uploads to its S3 and runs only in HaxeFoundation, and upstream publishes
 GitHub releases by hand (`extra/release-checklist.txt`). Packages have the JIT off (no
-eval-jit.conf, no OCaml): 87.5–95.4 s on the benchmark instead of 331 s. A job publishing a GitHub
-release from them comes once a trial run is green. A build made on a developer's Mac is not a
+eval-jit.conf, no OCaml): 87.5–95.4 s on the benchmark instead of 331 s. C3 attaches them to a
+release. A build made on a developer's Mac is not a
 package: it needs `MACOSX_DEPLOYMENT_TARGET` (it otherwise requires the build machine's macOS) and
 static pcre2/mbedtls, which is what the CI does.
+
+### C3: packages attached to a published release — job `release` in `.github/workflows/main.yml`
+
+**How upstream releases** (`extra/release-checklist.txt`, and the 4.3.7 release's files): a
+maintainer publishes an empty GitHub release, which creates the tag; the tag's push runs the CI,
+whose `deploy` job uploads the packages to Haxe's build server (build.haxe.org, S3; the secrets
+exist only in HaxeFoundation); then the maintainer runs hxgithub's `release.n`
+([Simn/hxgithub](https://github.com/Simn/hxgithub), `scripts/release`) with their GitHub token. It
+downloads the packages from the build server, names them `haxe-<version>-<target>` (`linux64`,
+`osx`, `win`, `win64`, as .tar.gz or .zip), takes the installers out of their archives
+(`osx-installer.pkg`, `win.exe`, `win64.exe`), uploads them to the release, writes the release's
+text from `extra/CHANGES.txt` and updates haxe.org's download pages. For 4.3.7 its eight files were
+uploaded within 20 seconds, 1 h 45 min after the release was published; `linux-arm64`, which the
+tool does not know, was added by hand a year later.
+
+**What.** haxe-plus has neither the build server nor the tool (bound to HaxeFoundation/haxe), so
+the CI does the tool's part itself: the workflow also runs when a release is published
+(`release: published`), and after the five build jobs the `release` job attaches that run's
+packages to the release, named and unpacked as the tool does, `linux-arm64` included. The tests run
+in the same run but do not hold the upload back.
+
+**Releasing.** On GitHub, publish a release of the `haxe4` branch with a new tag `<base>-plus.<n>`
+(`4.3.7-plus.1`, ...) and its notes (what changed since the last one, from this file). The run
+builds the tag (no revision in `haxe -version`) and attaches `haxe-<tag>-linux64.tar.gz`,
+`-linux-arm64.tar.gz`, `-osx.tar.gz`, `-osx-installer.pkg`, `-win64.zip`, `-win64.exe`, `-win.zip`
+and `-win.exe`. Check the run's tests before announcing. The tag's commit must contain this
+workflow.
 
 ## Rejected ideas
 
@@ -584,10 +612,10 @@ In the order of what they may be worth:
    source. Try an OCaml 4.14 flambda switch (the JIT then compiles with that ocamlopt).
 4. **Native `TypedExprTools.map`/`iter`** in eval (~1–2%): must keep the call order of `f`, the
    enum values and objects built, and the stack frames.
-5. **Releases**: the CI builds the packages (C2); add a job that publishes them as a GitHub
-   release. The JIT needs, at run time, the ocamlopt of the switch that built the binary, the
-   .cmi/.cmx snapshot and a C toolchain: a "JIT kit" (relocatable eval-jit.conf, bundled ocamlopt
-   and libraries) would bring 40 s to package users; Windows is untested (pruning uses `rm -rf`).
+5. **A JIT kit for the packages** (C3 ships them with the JIT off): the JIT needs, at run time, the
+   ocamlopt of the switch that built the binary, the .cmi/.cmx snapshot and a C toolchain; a
+   relocatable eval-jit.conf and bundled ocamlopt and libraries would bring package users from ~90 s
+   to 40 s on the benchmark. Windows is untested (pruning uses `rm -rf`).
 6. **Coverage**: run tests/display, tests/server (the JIT under `--wait`/`--connect`), tests/optimization.
 
 ## History

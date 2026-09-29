@@ -1,8 +1,13 @@
 # TODO: support skip ci (https://github.community/t/github-actions-does-not-respect-skip-ci/17325/8)
 
 name: CI
-# haxe-plus: run by hand (Actions > CI > Run workflow), not on every push (HAXE-PLUS.md, C1).
-on: [workflow_dispatch]
+# haxe-plus: run by hand (Actions > CI > Run workflow), not on every push (HAXE-PLUS.md, C1), and
+# for a published release (C3). In 4.3.7 this template is older than .github/workflows/main.yml:
+# edit that file, do not regenerate it (C2).
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   windows64-build:
