@@ -687,6 +687,11 @@ the run's tests before announcing. The tag's commit must contain this workflow.
 - mac Java test: JDK 11 (as on Linux) instead of the runner's JDK 21, whose class files 4.3.7's
   Java library reader does not fully read (`MyClass_MyAnnotation` not found).
 
+**Result.** [Run 36637008219](https://github.com/barisyild/haxe-plus/actions/runs/36637008219)
+(48c6f1807): all 46 jobs pass, in 32 minutes from start to end. The Intel mac build takes 9
+minutes instead of 43 to 50, the mac HashLink test 3 minutes instead of 24 to more than 50, and
+the Windows 64 build, now the longest job, 27 minutes.
+
 **Porting.** For haxe5, take upstream's CI of that release as it is; C4 is only for 4.3.7's.
 
 ## Rejected ideas
@@ -786,3 +791,5 @@ In the order of what they may be worth:
   a fork of HaxeFoundation/haxe (renamed from barisyild/haxe). C2: CI brought up to date for a
   trial run of the release packages. J2: native code only for heavy projects, after measuring the
   JIT's fixed cost on Haxe's tests/unit and hxcpp (4.3.171).
+- 2026-09-30 — C4: the CI passes on today's runners (46 jobs, 32 minutes), after seven runs; the
+  Windows display test failure of HaxeFoundation/haxe#11756 stays known.
