@@ -626,8 +626,9 @@ the run's tests before announcing. The tag's commit must contain this workflow.
   failing command, where a failure used to surface only at the artifact check.
 - `HXCPP_COMPILE_CACHE` is `${{ github.workspace }}/hxcache` in every test job: hxcpp passes the
   `~` of `~/hxcache` to the linker as it is.
-- Lua: hererocks is installed from its git repository (as upstream does), whose LuaJIT 2.0
-  download still works.
+- Lua: hererocks is installed from its git repository with pipx (as upstream does): the released
+  one can no longer fetch LuaJIT 2.0, and the runner's pip installs the git one as `UNKNOWN`,
+  without its command.
 - mac PHP test: PHP 8.4 instead of the runner's 8.5, whose warnings on float-to-int casts it cannot
   represent 4.3.7's PHP runtime turns into exceptions (`php.Boot.shiftRightUnsigned`, Issue7533).
   Changing the runtime would change PHP output, which haxe-plus does not do.
