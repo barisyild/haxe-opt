@@ -47,6 +47,8 @@ class Hl {
 		FileSystem.createDirectory(hlBuild);
 		final generator = systemName == "Windows" ? ["-DCMAKE_SYSTEM_VERSION=10.0.19041.0"] : ["-GNinja"];
 		runCommand("cmake", generator.concat([
+			// haxe-plus: HashLink 1.15 asks for CMake < 3.5, which the runners' CMake 4 refuses (HAXE-PLUS.md, C4)
+			"-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
 			"-DBUILD_TESTING=OFF",
 			"-DWITH_DIRECTX=OFF",
 			"-DWITH_FMT=ON",
