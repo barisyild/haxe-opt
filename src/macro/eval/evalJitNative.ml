@@ -33,6 +33,9 @@
 	  HAXE_EVAL_JIT_STATS=1   print counters at exit
 	  HAXE_EVAL_JIT_DUMP=dir  also write the source of every unit compiled to dir
 	  HAXE_EVAL_JIT_MAX_FUNCTION=n  largest function compiled, in typed expressions
+	  HAXE_EVAL_JIT_THRESHOLD=n  calls in a compilation that make its project heavy (see Tiers); 0
+	                          compiles every class
+	  HAXE_EVAL_JIT_COUNTS=n  print the n classes run by the closure compiler with most calls
 	and by eval-jit.conf next to the haxe executable (ocamlopt path, include directories, cache
 	directory, parallel jobs). Without that file the JIT is off.
 *)
@@ -58,12 +61,23 @@ let strict = lazy (getenv "HAXE_EVAL_JIT_STRICT" <> "")
    straight-line code run once. *)
 let max_function_size = lazy (try int_of_string (getenv "HAXE_EVAL_JIT_MAX_FUNCTION") with _ -> 3000)
 
+(* Calls of methods in one compilation after which its project is heavy (see Tiers). Native code
+   saves about 120ns a call on a large reflaxe.CPP build, and preparing every class costs a few
+   tenths of a second, so it pays from a few million calls on. 0 makes every class native, as the
+   JIT is tested: the default under HAXE_EVAL_JIT_STRICT. *)
+let default_threshold = 1_000_000
+
+let threshold = lazy (match getenv "HAXE_EVAL_JIT_THRESHOLD" with
+	| "" -> if Lazy.force strict then 0 else default_threshold
+	| s -> (try max 0 (int_of_string s) with _ -> default_threshold))
+
 let log fmt = Printf.ksprintf (fun s -> if Lazy.force log_enabled then prerr_endline ("[eval-jit] " ^ s)) fmt
 
 type config = {
 	ocamlopt : string;
 	includes : string list;
 	flags : string list;
+	cache_root : string;
 	cache_dir : string;
 	jobs : int;
 }
@@ -113,6 +127,7 @@ let config = lazy (
 				ocamlopt = !ocamlopt;
 				includes = List.rev !includes;
 				flags = List.rev !flags;
+				cache_root = !cache;
 				cache_dir = Filename.concat !cache build_id;
 				jobs = max 1 !jobs;
 			}
@@ -128,15 +143,17 @@ let stat_units_failed = ref 0
 let stat_functions_native = ref 0
 let stat_functions_fallback = ref 0
 let stat_functions_unsupported = ref 0
+let stat_functions_tier0 = ref 0
+let stat_projects_heavy = ref 0
 let stat_compile_time = ref 0.
 let stat_generate_time = ref 0.
 let stat_load_time = ref 0.
 
 let () = at_exit (fun () ->
 	if getenv "HAXE_EVAL_JIT_STATS" <> "" then
-		Printf.eprintf "[eval-jit] units: %d compiled, %d cached, %d failed; functions: %d native, %d unsupported, %d fell back at link; generate %.3fs, compile %.3fs, load %.3fs\n%!"
-			!stat_units_compiled !stat_units_cached !stat_units_failed !stat_functions_native !stat_functions_unsupported !stat_functions_fallback
-			!stat_generate_time !stat_compile_time !stat_load_time
+		Printf.eprintf "[eval-jit] units: %d compiled, %d cached, %d failed; functions: %d native, %d closure-compiled (tier 0), %d unsupported, %d fell back at link; %d projects became heavy; generate %.3fs, compile %.3fs, load %.3fs\n%!"
+			!stat_units_compiled !stat_units_cached !stat_units_failed !stat_functions_native !stat_functions_tier0 !stat_functions_unsupported !stat_functions_fallback
+			!stat_projects_heavy !stat_generate_time !stat_compile_time !stat_load_time
 )
 
 (* Link-time requirements. The generated code refers to them as jk<i>; the linker resolves them
@@ -1887,11 +1904,110 @@ let prepare_classes ctx cfg cl =
 	compile_units cfg missing;
 	List.iter (fun u -> if u.u_state = None then load_unit cfg u) fresh
 
+(* Tiers
+
+   Making the classes native costs a fixed amount in every compilation — each unit's source is
+   generated to find its cache key, the bundles loaded, the functions linked — which compilations
+   running few macros never pay back: with Haxe's own tests, compiling with the JIT was slower than
+   without. So the classes are native only in compilations of a project that has been heavy before.
+   Otherwise every function is the closure compiler's, exactly as without the JIT, behind a wrapper
+   counting the calls; at [threshold] calls in one compilation the project is recorded as heavy, in
+   a file of the cache root keyed by the class paths and the kind of context (not by the defines or
+   the main class: the variants of a build and the programs of a test suite share it), and its
+   later compilations prepare every class
+   natively up front, as with threshold 0. A function's tier is fixed when it is created, and the
+   wrapper only counts and then calls, in tail position: what runs is what runs without the JIT.
+   The decision is the project's, not the class's: classes called rarely can still do much of the
+   work, in loops and local functions, which counting a class's calls cannot see. The first
+   compilation of a heavy project runs at the closure compiler's speed. *)
+
+type project = {
+	p_file : string;
+	p_heavy : bool; (* when the compilation started: decides tiers *)
+	mutable p_calls : int;
+	mutable p_recorded : bool;
+}
+
+let projects : (int,project) Hashtbl.t = Hashtbl.create 0
+
+let project ctx cfg =
+	match Hashtbl.find_opt projects ctx.ctx_id with
+	| Some p ->
+		p
+	| None ->
+		let com = ctx.curapi.MacroApi.get_com() in
+		let sign = Digest.to_hex (Digest.string (String.concat "\n" [
+			jit_version;
+			(if ctx.is_macro then "macro" else "interp");
+			String.concat "\n" com.Common.class_paths#as_string_list;
+		])) in
+		let file = Filename.concat cfg.cache_root ("heavy-" ^ sign) in
+		let p = { p_file = file; p_heavy = Sys.file_exists file; p_calls = 0; p_recorded = false } in
+		Hashtbl.replace projects ctx.ctx_id p;
+		p
+
+let is_heavy ctx cfg =
+	(project ctx cfg).p_heavy
+
+let record_heavy ctx cfg p =
+	if not p.p_recorded then begin
+		p.p_recorded <- true;
+		incr stat_projects_heavy;
+		log "heavy: %s" p.p_file;
+		try
+			mkdir_p cfg.cache_root;
+			write_file_atomic p.p_file (Printf.sprintf "%d calls\n" p.p_calls)
+		with _ ->
+			()
+	end
+
+(* Calls per class, for HAXE_EVAL_JIT_COUNTS. *)
+type tier0_class = {
+	mutable t_calls : int;
+}
+
+let tier0_classes : (int * path,tier0_class) Hashtbl.t = Hashtbl.create 0
+
+(* Function [f] of class [c] in a project that is not heavy: it runs as it is, and counts. *)
+let tier0 ctx cfg c f =
+	let th = Lazy.force threshold in
+	let p = project ctx cfg in
+	let t = match Hashtbl.find_opt tier0_classes (ctx.ctx_id,c.cl_path) with
+		| Some t ->
+			t
+		| None ->
+			let t = { t_calls = 0 } in
+			Hashtbl.replace tier0_classes (ctx.ctx_id,c.cl_path) t;
+			t
+	in
+	incr stat_functions_tier0;
+	(fun vl ->
+		t.t_calls <- t.t_calls + 1;
+		let n = p.p_calls + 1 in
+		p.p_calls <- n;
+		if n = th then record_heavy ctx cfg p;
+		f vl)
+
+let () = at_exit (fun () ->
+	match (try int_of_string (getenv "HAXE_EVAL_JIT_COUNTS") with _ -> 0) with
+	| 0 ->
+		()
+	| n ->
+		Hashtbl.iter (fun _ p -> Printf.eprintf "[eval-jit] tier 0: %10d calls in all (%s)\n" p.p_calls (Filename.basename p.p_file)) projects;
+		let l = Hashtbl.fold (fun (_,path) t acc -> (t.t_calls,path) :: acc) tier0_classes [] in
+		let l = List.sort (fun (a,_) (b,_) -> compare (b : int) a) l in
+		List.iteri (fun i (calls,path) ->
+			if i < n then Printf.eprintf "[eval-jit] tier 0: %10d calls  %s\n" calls (s_type_path path)
+		) l;
+		flush stderr
+)
+
 (* Called by EvalPrototype.add_types once the prototypes of [types] exist and before their
-   fields are initialized. *)
+   fields are initialized: prepares the classes in heavy projects, or always under threshold 0. *)
 let prepare ctx types =
 	match enabled ctx with
 	| None -> ()
+	| Some cfg when Lazy.force threshold > 0 && not (is_heavy ctx cfg) -> ()
 	| Some cfg ->
 		let cl = ExtList.List.filter_map (fun mt -> match mt with
 			| TClassDecl c when not (has_class_flag c CExtern) -> Some c
@@ -1905,6 +2021,8 @@ let jit_method ctx c key_type key_field tf static pos =
 	match enabled ctx with
 	| None ->
 		fallback ()
+	| Some cfg when Lazy.force threshold > 0 && not (is_heavy ctx cfg) ->
+		tier0 ctx cfg c (fallback ())
 	| Some cfg ->
 		let u = match Hashtbl.find_opt units_by_class (ctx.ctx_id,c.cl_path) with
 			| Some (Some u) when u.u_class == c -> Some u
