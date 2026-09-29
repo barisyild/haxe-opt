@@ -640,6 +640,16 @@ jobs:
           sudo make && sudo make install
           cd ..
 
+      # haxe-plus: opam's release binary, as upstream does now, instead of Homebrew's. Homebrew has no
+      # bottles for Intel macOS 15, where its opam took 40 minutes to build from source with OCaml and
+      # OpenSSL. The same version as Homebrew's, which made the cached ~/.opam (HAXE-PLUS.md, C4)
+      - name: Install opam
+        run: |
+          set -ex
+          curl -sSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-${{ runner.arch == 'ARM64' && 'arm64' || 'x86_64' }}-macos -o $RUNNER_TEMP/opam
+          sudo install $RUNNER_TEMP/opam /usr/local/bin/opam
+          opam --version
+
       - name: Install OCaml libraries
         if: steps.cache-opam.outputs.cache-hit != 'true'
         run: |

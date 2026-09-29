@@ -39,14 +39,21 @@ class Hl {
 				Linux.requireAptPackages(["libpng-dev", "libjpeg-turbo8-dev", "libturbojpeg", "zlib1g-dev", "libvorbis-dev", "libsqlite3-dev"]);
 			case "Mac":
 				runNetworkCommand("brew", ["update", '--auto-update']);
-				runNetworkCommand("brew", ["bundle", '--file=${hlSrc}/Brewfile']);
+				// haxe-plus: only what the build below uses, instead of HashLink's Brewfile. Homebrew has no bottles
+				// for Intel macOS 15, where the Brewfile's SDL, OpenAL, libuv and OpenSSL took half an hour or more
+				// to build from source, and its mbedtls is 4, which HashLink 1.15 predates (HAXE-PLUS.md, C4)
+				Sys.putEnv("HOMEBREW_NO_INSTALL_UPGRADE", "1");
+				Sys.putEnv("HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK", "1");
+				runNetworkCommand("brew", ["install", "jpeg-turbo", "libpng", "libogg", "libvorbis", "mbedtls@3"]);
 			case "Windows":
 				//pass
 		}
 
 		FileSystem.createDirectory(hlBuild);
 		final generator = systemName == "Windows" ? ["-DCMAKE_SYSTEM_VERSION=10.0.19041.0"] : ["-GNinja"];
-		runCommand("cmake", generator.concat([
+		// haxe-plus: mbedtls@3 is keg-only (HAXE-PLUS.md, C4)
+		final prefixPath = systemName == "Mac" ? ["-DCMAKE_PREFIX_PATH=" + commandResult("brew", ["--prefix", "mbedtls@3"]).stdout.trim()] : [];
+		runCommand("cmake", generator.concat(prefixPath).concat([
 			// haxe-plus: HashLink 1.15 asks for CMake < 3.5, which the runners' CMake 4 refuses (HAXE-PLUS.md, C4)
 			"-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
 			"-DBUILD_TESTING=OFF",

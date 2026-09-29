@@ -113,9 +113,9 @@ reflaxe.CPP's own classes), write barriers about 5%, and a flat tail.
 `haxe4` builds like Haxe 4.3.7 (`extra/BUILDING.md`): an OCaml 4.14 switch with haxe.opam's
 dependencies, plus pcre2, zlib, neko and mbedtls 2.x. Verified with: OCaml 4.14.2 (no flambda),
 opam 2.3.0, dune 3.15.3, camlp5 8.03.04, ocamlfind 1.9.1, sedlex 3.7, xml-light 2.5, extlib 1.8.0,
-ptmap 2.0.5, sha 1.15.4, camlp-streams 5.0.1, luv 0.5.13 (0.5.14 in CI: C4), ctypes 0.24.0,
-integers 0.8.0; pcre2
-10.47, zlib 1.2.12, neko 2.4.1, mbedtls 2.28.9; macOS 27 on arm64. OCaml 5 has not been tried.
+ptmap 2.0.5, sha 1.15.4, camlp-streams 5.0.1, luv 0.5.13 (0.5.14 in the Windows CI: C4), ctypes
+0.24.0, integers 0.8.0; pcre2 10.47, zlib 1.2.12, neko 2.4.1, mbedtls 2.28.9; macOS 27 on arm64.
+OCaml 5 has not been tried.
 
 On macOS with a recent clang, luv 0.5.13 fails to build with
 `incompatible-function-pointer-types` errors: install it with `CC` pointing to a wrapper script
@@ -552,6 +552,11 @@ branches it runs only when started from the Actions tab (`workflow_dispatch`), o
 release (C3). Changed in the template and in the file generated from it. It builds and tests the
 base release's targets, with the JIT off (no eval-jit.conf there).
 
+Upstream's `.github/workflows/cancel.yml` is kept: starting a run cancels the older runs of the
+same branch still in progress at another commit ("The run was canceled by @github-actions[bot]").
+Let a run finish before starting one for a newer commit, unless the new one is meant to replace
+it.
+
 ### C2: CI runners and OCaml versions — `.github/workflows/main.yml`
 
 **What.** So that the packages can be built at all today, with the toolchain haxe-plus was verified
@@ -618,7 +623,7 @@ builds the tag (no revision in `haxe -version`) and attaches `haxe-<tag>-linux64
 `-linux-arm64.tar.gz`, `-osx.tar.gz`, `-osx-installer.pkg`, `-win64.zip` and `-win64.exe`. Check
 the run's tests before announcing. The tag's commit must contain this workflow.
 
-### C4: today's runners and tools — `.github/workflows/main.yml`, `haxe.opam`, `tests/runci/targets/Lua.hx`
+### C4: today's runners and tools — `.github/workflows/main.yml`, `haxe.opam`, `tests/Brewfile`, `tests/runci/targets/{Lua,Hl,Cs}.hx`
 
 **What**, for each failure of the trial run (C2), mostly as upstream's current CI does it:
 - 32-bit Windows: its build and test jobs are gone. Its OCaml setup (a fork of `setup-ocaml`)
@@ -635,12 +640,32 @@ the run's tests before announcing. The tag's commit must contain this workflow.
   `CMakeLists.txt` asks for CMake < 3.5, which the runners' CMake 4 refuses unless configured with
   `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`. The Windows tests run on `windows-2022` (Visual Studio
   2022, as 4.3.7's did) rather than `windows-latest`, now Visual Studio 2026, which HashLink 1.15
-  predates.
+  predates. On mac, the test installs only what the CI's HashLink build uses (jpeg-turbo, libpng,
+  libogg, libvorbis, and `mbedtls@3`, keg-only, passed to CMake as `CMAKE_PREFIX_PATH`) instead of
+  HashLink's Brewfile: Homebrew's `mbedtls` is 4, whose `entropy.h` and `ctr_drbg.h`, included by
+  1.15's `ssl.c`, are private now, and the Brewfile's SDL, OpenAL, libuv and OpenSSL, which the
+  build turns off, were built from source on the Intel runner for 25 to more than 50 minutes. 1.15's
+  `ssl.hdll` was checked to build against mbedtls 3.6.7 found this way.
+- Homebrew no longer supports Intel macOS (Tier 3 since September 2026, as the runners warn): on
+  `macos-15-intel` many formulae have no bottle any more (OCaml, OpenSSL, SDL, opam) and are built
+  from source. The mac builds install opam from its release binary (2.6.0, the version Homebrew
+  had, so the cached `~/.opam` still fits) instead of Homebrew's, which took 40 of the x64 build's
+  48 minutes building OCaml 5 and OpenSSL; `tests/Brewfile` no longer lists it. Upstream builds
+  both mac packages on arm64 now (x64 under Rosetta), and keeps `macos-15-intel` for HashLink's JIT
+  only.
 - C# test `tests/misc/cs/csTwoLibs`: its four variants are built into the same `bin/`, and hxcs
   copies a referenced DLL only when it looks newer, to the second: a variant built within the
   second of the previous one kept the previous `haxeboot.dll` (`haxe.root.Array` not found). A
   race of the test that faster compilations hit more often; each variant now starts from a clean
   `bin/`.
+- Known and not fixed: the display tests `cases.Issue6405` and `cases.Issue5172` (in the Windows
+  macro job) fail now and then with errors from unrelated modules (`ExampleJSGenerator.hx:102:
+  Class<haxe.macro.Context> has no field error`, `Lock.hx`, the test's own `src/`). Their `usage`
+  request types every module that mentions the name (`SyntaxExplorer.explore_uncached_modules`).
+  Upstream's, unresolved there: [HaxeFoundation/haxe#11756](https://github.com/HaxeFoundation/haxe/issues/11756)
+  ("randomly failing for a while and nobody knows why"; rerunning the job fails again, the next
+  commit passes). Seen here in one of the first three runs with Windows tests, all of the same
+  compiler. Rerun all jobs, so that the compiler is built again, not only the failed one.
 - The compilation server's tests (in the js job) can time out on the slow `macos-15-intel`
   runners: each test starts a haxe server within utest's 250 ms. They pass locally in every JIT
   mode and passed on the same runners in the first trial run; rerun the job.
