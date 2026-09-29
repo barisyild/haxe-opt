@@ -623,7 +623,7 @@ builds the tag (no revision in `haxe -version`) and attaches `haxe-<tag>-linux64
 `-linux-arm64.tar.gz`, `-osx.tar.gz`, `-osx-installer.pkg`, `-win64.zip` and `-win64.exe`. Check
 the run's tests before announcing. The tag's commit must contain this workflow.
 
-### C4: today's runners and tools — `.github/workflows/main.yml`, `haxe.opam`, `tests/Brewfile`, `tests/runci/targets/{Lua,Hl,Cs}.hx`
+### C4: today's runners and tools — `.github/workflows/main.yml`, `haxe.opam`, `tests/Brewfile`, `tests/runci/targets/{Lua,Hl,Cs}.hx`, `tests/server/src/TestCase.hx`
 
 **What**, for each failure of the trial run (C2), mostly as upstream's current CI does it:
 - 32-bit Windows: its build and test jobs are gone. Its OCaml setup (a fork of `setup-ocaml`)
@@ -665,10 +665,17 @@ the run's tests before announcing. The tag's commit must contain this workflow.
   Upstream's, unresolved there: [HaxeFoundation/haxe#11756](https://github.com/HaxeFoundation/haxe/issues/11756)
   ("randomly failing for a while and nobody knows why"; rerunning the job fails again, the next
   commit passes). Seen here in one of the first three runs with Windows tests, all of the same
-  compiler. Rerun all jobs, so that the compiler is built again, not only the failed one.
-- The compilation server's tests (in the js job) can time out on the slow `macos-15-intel`
-  runners: each test starts a haxe server within utest's 250 ms. They pass locally in every JIT
-  mode and passed on the same runners in the first trial run; rerun the job.
+  compiler. Rerun all jobs, so that the compiler is built again, not only the failed one. On macOS
+  the suite passed 15 times out of 15 with the std library copied to 15 different paths (the
+  Windows path changes with each build): there, at least, the order in which the module cache's
+  hash table lists the files does not trigger it.
+- The compilation server's tests (`tests/server`, in the js job): each test's setup starts a haxe
+  server and waited for it to connect for utest's default 250 ms, which the slow `macos-15-intel`
+  runners missed in two of the first five runs (`Cannot done() at src/TestCase.hx:58 because async
+  is timed out`; never on Linux or Windows). The setup now waits up to 3 s (`@:timeout(3000)`), as
+  upstream's has since [HaxeFoundation/haxe#11482](https://github.com/HaxeFoundation/haxe/pull/11482). Not haxe-plus's doing: its GC settings (G1) add about 1 ms to the
+  compiler's startup (median 13.8 against 12.7 ms, arm64), and the suite passes locally in every
+  JIT mode.
 - `HXCPP_COMPILE_CACHE` is `${{ github.workspace }}/hxcache` in every test job: hxcpp passes the
   `~` of `~/hxcache` to the linker as it is.
 - Lua: hererocks is installed from its git repository with pipx (as upstream does): the released

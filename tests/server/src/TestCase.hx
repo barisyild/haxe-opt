@@ -52,6 +52,9 @@ class TestCase implements ITest {
 		}
 	}
 
+	// haxe-plus: as upstream since HaxeFoundation/haxe#11482; the haxe server does not always
+	// connect within utest's 250 ms on the slow macos-15-intel runners (HAXE-PLUS.md, C4)
+	@:timeout(3000)
 	public function setup(async:utest.Async) {
 		testDir = "test/cases/" + i++;
 		vfs = new Vfs(testDir);
