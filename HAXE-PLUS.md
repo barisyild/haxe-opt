@@ -69,6 +69,21 @@ The same build step by step (seconds; each row adds to the rows above it; the ID
 The local build of the unchanged release was 7% slower than the official binary (355 s against
 331 s); the cause was not investigated ([Future work](#future-work)).
 
+With Haxe's own generators, whose code is OCaml that haxe-plus does not touch, only the macro and
+GC share of a build gets faster (same machine, output byte-identical in every case):
+
+| Build | Release 4.3.7 | haxe-plus, JIT on | JIT off |
+|---|---|---|---|
+| The same game to JavaScript (12 MB) | 7.84 / 7.79 s | 7.23 / 7.38 s | 7.25 / 7.33 s |
+| Haxe's tests/unit to C++, generation only (2165 .cpp) | 3.15 / 3.07 s | 3.34 / 2.92 s | 2.40 / 2.45 s |
+| The same through hxcpp 4.3.171, end to end | 77.0 s | 80.0 s | |
+
+The hxcpp build is the C++ compiler's time (identical sources, so identical work; the 3 s is that
+build's noise). Where few macros run, the JIT's fixed cost — generating every class's source to
+find its cache key (0.18 s here) and loading bundles (0.17 s) — is more than it saves
+([Future work](#future-work)). hxcpp 4.3.2 from lib.haxe.org does not build on the macOS 27 SDK
+(its zlib 1.2.11 defines `fdopen` as a macro); the GitHub builds (4.3.171, zlib 1.3.1) do.
+
 Where the time goes now (sampling profile of the last build): GC about 17% (a live heap of ~5 GB,
 mostly the typed AST the macros keep), the macro API's encoders about 15%, JIT-compiled Haxe code
 about 14% (hottest: the standard library's `haxe.macro.TypedExprTools.map` and `iter`, then
@@ -617,6 +632,10 @@ In the order of what they may be worth:
    relocatable eval-jit.conf and bundled ocamlopt and libraries would bring package users from ~90 s
    to 40 s on the benchmark. Windows is untested (pruning uses `rm -rf`).
 6. **Coverage**: run tests/display, tests/server (the JIT under `--wait`/`--connect`), tests/optimization.
+7. **The JIT's fixed cost**: every class of a batch has its unit source generated (to compute the
+   cache key) and its bundle loaded, even when few of its methods ever run: 0.35 s on Haxe's
+   tests/unit, where the JIT is then slower than no JIT. Prepare a class only when one of its
+   methods is first called, or key the cache without generating the source.
 
 ## History
 
