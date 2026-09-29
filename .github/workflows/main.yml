@@ -259,7 +259,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ocaml: ["4.14.0", "5.3.0"]
+        # haxe-plus: 4.14 only (HAXE-PLUS.md, C2)
+        ocaml: ["4.14.2"]
     steps:
       - uses: actions/checkout@main
         with:
@@ -334,7 +335,7 @@ jobs:
         run: echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
 
       - name: Build xmldoc
-        if: matrix.ocaml == '4.14.0'
+        if: matrix.ocaml == '4.14.2'
         run: |
           set -ex
           make -s xmldoc
@@ -353,7 +354,7 @@ jobs:
 
       - name: Upload xmldoc artifact
         uses: actions/upload-artifact@v4
-        if: matrix.ocaml == '4.14.0'
+        if: matrix.ocaml == '4.14.2'
         with:
           name: xmldoc
           path: extra/doc
@@ -369,7 +370,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ocaml: ["4.14.0", "5.3.0"]
+        # haxe-plus: 4.14 only (HAXE-PLUS.md, C2)
+        ocaml: ["4.14.2"]
         target: [macro, js, hl, cpp, 'java,jvm', cs, php, python, lua, flash, neko]
         include:
           - target: hl
@@ -573,6 +575,9 @@ jobs:
         run: |
           set -ex
           opam init
+          # haxe-plus: OCaml 4.14.2 rather than the system's 4.13 (HAXE-PLUS.md, C2)
+          opam switch create 4.14.2
+          eval $(opam env)
           opam pin add haxe . --no-action
           opam install haxe --deps-only --assume-depexts
           opam list
@@ -685,13 +690,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-13]
+        # haxe-plus: macos-13 runners are retired (HAXE-PLUS.md, C2)
+        os: [macos-14, macos-15-intel]
     runs-on: ${{ matrix.os }}
     env:
       PLATFORM: mac${{ matrix.os == 'macos-14' && '-arm64' || '' }}
       OPAMYES: 1
       MACOSX_DEPLOYMENT_TARGET: 10.13
-      OCAML_VERSION: 5.1.1
+      # haxe-plus: 4.14, as verified (HAXE-PLUS.md, C2)
+      OCAML_VERSION: 4.14.2
       CTYPES: 0.21.1
     steps:
       - uses: actions/checkout@main
@@ -1024,7 +1031,8 @@ jobs:
 
   mac-test:
     needs: mac-build-universal
-    runs-on: macos-13
+    # haxe-plus: macos-13 runners are retired (HAXE-PLUS.md, C2)
+    runs-on: macos-15-intel
     env:
       PLATFORM: mac
       TEST: ${{matrix.target}}

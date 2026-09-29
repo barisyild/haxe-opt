@@ -37,6 +37,7 @@ what the release binary generates.
 |---|---|---|
 | Haxe 4.3.7 release binary | 331 s | 6.8 s |
 | haxe-plus `haxe4` | **40.5 s** (max RSS 4.2–4.6 GB) | **2.8 s** |
+| haxe-plus `haxe4`, JIT off (no eval-jit.conf, as in CI packages) | 87.5–95.4 s (max RSS 2.0–2.7 GB) | |
 
 The same build step by step (seconds; each row adds to the rows above it; the IDs are those of the
 [catalog](#change-catalog)):
@@ -191,8 +192,8 @@ tests (3); the whole set ran at checkpoints along the way and on the final state
 The commits of each branch follow these groups, so each can be taken on its own:
 "eval: native JIT" (J), "eval: exact run-time caches and fewer allocations" (R1–R12),
 "compiler: GC settings for macro-heavy builds" (G1), "ci: run the CI workflow by hand only" (C1),
-and "haxe-plus: documentation, scripts, differential tests". The code comments at each change
-repeat the essentials.
+"haxe-plus: documentation, scripts, differential tests", and "ci: runners and OCaml 4.14 for every
+build" (C2). The code comments at each change repeat the essentials.
 
 ### J: native JIT — `src/macro/eval/evalJitNative.ml`, `evalJitRt.ml`
 
@@ -486,6 +487,27 @@ branches it runs only when started from the Actions tab (`workflow_dispatch`). C
 template and in the file generated from it. It still builds and tests the base release's targets,
 with the JIT off (no eval-jit.conf there).
 
+### C2: CI runners and OCaml versions — `.github/workflows/main.yml`
+
+**What.** So that the packages can be built at all today, with the toolchain haxe-plus was verified
+on: mac builds run on `macos-14` (arm64) and `macos-15-intel` (x64; the `macos-13` runners are
+retired), mac tests on `macos-15-intel`; OCaml 4.14.2 for Linux x64 (was 4.14.0 plus a 5.3.0
+variant), Linux arm64 (was Ubuntu 22.04's system OCaml, 4.13) and macOS (was 5.1.1); Windows keeps
+setup-ocaml's 4.14.0. An OCaml 5 variant comes back with haxe5.
+
+In 4.3.7 the template in `extra/github-actions` is older than the generated
+`.github/workflows/main.yml` (upstream edited the generated file for the 4.3 releases): edit the
+generated file, and never regenerate it from the template.
+
+**Packages.** The CI builds every release package (Windows 32/64 zip, installer and nupkg, Linux
+x64/arm64 tar.gz, macOS universal tar.gz and installer) and keeps them as the run's artifacts;
+upstream's `deploy` job uploads to its S3 and runs only in HaxeFoundation, and upstream publishes
+GitHub releases by hand (`extra/release-checklist.txt`). Packages have the JIT off (no
+eval-jit.conf, no OCaml): 87.5–95.4 s on the benchmark instead of 331 s. A job publishing a GitHub
+release from them comes once a trial run is green. A build made on a developer's Mac is not a
+package: it needs `MACOSX_DEPLOYMENT_TARGET` (it otherwise requires the build machine's macOS) and
+static pcre2/mbedtls, which is what the CI does.
+
 ## Rejected ideas
 
 - **Stores without write barrier into fresh arrays** (through an `int array` view): OCaml 4.14
@@ -562,13 +584,15 @@ In the order of what they may be worth:
    source. Try an OCaml 4.14 flambda switch (the JIT then compiles with that ocamlopt).
 4. **Native `TypedExprTools.map`/`iter`** in eval (~1–2%): must keep the call order of `f`, the
    enum values and objects built, and the stack frames.
-5. **Releases**: the JIT needs, at run time, the ocamlopt of the switch that built the binary and
-   the .cmi/.cmx snapshot; a release must ship both or leave the JIT off. CI builds for macOS, Linux,
-   Windows (pruning uses `rm -rf`; Windows untested).
+5. **Releases**: the CI builds the packages (C2); add a job that publishes them as a GitHub
+   release. The JIT needs, at run time, the ocamlopt of the switch that built the binary, the
+   .cmi/.cmx snapshot and a C toolchain: a "JIT kit" (relocatable eval-jit.conf, bundled ocamlopt
+   and libraries) would bring 40 s to package users; Windows is untested (pruning uses `rm -rf`).
 6. **Coverage**: run tests/display, tests/server (the JIT under `--wait`/`--connect`), tests/optimization.
 
 ## History
 
 - 2026-09-29 — `haxe4` created from 4.3.7 with J, R1–R12, G1 and C1; verified as above on recompsx
   (Crash Bash through reflaxe.CPP, 331 → 40.5 s; recompiler 6.8 → 2.8 s). The repository became
-  a fork of HaxeFoundation/haxe (renamed from barisyild/haxe).
+  a fork of HaxeFoundation/haxe (renamed from barisyild/haxe). C2: CI brought up to date for a
+  trial run of the release packages.
