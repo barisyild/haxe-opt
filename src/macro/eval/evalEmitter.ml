@@ -66,7 +66,7 @@ let decode_int_p v p = match v with
 	| VFloat f -> int_of_float f
 	| _ -> unexpected_value_p v "int" p
 
-let check_stack_depth env =
+let[@inline] check_stack_depth env =
 	if env.env_stack_depth > (get_ctx()).max_stack_depth then
 		exc_string "Stack overflow"
 
