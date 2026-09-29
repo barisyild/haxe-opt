@@ -636,6 +636,11 @@ the run's tests before announcing. The tag's commit must contain this workflow.
   `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`. The Windows tests run on `windows-2022` (Visual Studio
   2022, as 4.3.7's did) rather than `windows-latest`, now Visual Studio 2026, which HashLink 1.15
   predates.
+- C# test `tests/misc/cs/csTwoLibs`: its four variants are built into the same `bin/`, and hxcs
+  copies a referenced DLL only when it looks newer, to the second: a variant built within the
+  second of the previous one kept the previous `haxeboot.dll` (`haxe.root.Array` not found). A
+  race of the test that faster compilations hit more often; each variant now starts from a clean
+  `bin/`.
 - The compilation server's tests (in the js job) can time out on the slow `macos-15-intel`
   runners: each test starts a haxe server within utest's 250 ms. They pass locally in every JIT
   mode and passed on the same runners in the first trial run; rerun the job.

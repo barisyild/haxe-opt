@@ -77,6 +77,11 @@ class Cs {
 		changeDirectory(getMiscSubDir("cs", "csTwoLibs"));
 		for (i in 1...5)
 		{
+			// haxe-plus: each variant from a clean bin/. hxcs copies a referenced DLL only when it looks
+			// newer, to the second, so a variant built within the second of the previous one kept its
+			// haxeboot.dll (HAXE-PLUS.md, C4)
+			if (FileSystem.exists("bin"))
+				deleteDirectoryRecursively("bin");
 			runCommand("haxe", ['compile-$i.hxml','-D','fast_cast']);
 			runCs("bin/main/bin/Main.exe");
 		}
