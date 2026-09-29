@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Runs Haxe's own eval test suites (tests/unit, misc, sys, threads, nullsafety) with a haxe binary,
 # the way every haxe-plus change is verified (HAXE-PLUS.md, "Verification"):
-#   off     HAXE_EVAL_JIT=0: the run-time changes alone
-#   strict  HAXE_EVAL_JIT_STRICT=1: a unit that fails to compile or load is fatal. Run it first
-#           after a build, while the cache is cold, so that every unit is compiled.
-#   warm    the JIT as it is used, with units from the cache
+#   off      HAXE_EVAL_JIT=0: the run-time changes alone
+#   strict   HAXE_EVAL_JIT_STRICT=1: every class native (threshold 0), and a unit that fails to
+#            compile or load is fatal. Run it first after a build, while the cache is cold, so
+#            that every unit is compiled; run it again for the warm cache.
+#   default  the JIT's defaults (J2): these suites are light projects, so their functions run
+#            closure-compiled behind the counting wrapper
 #
-#   test-suites.sh <haxe binary> <log dir> [mode...]      (default: off strict warm)
+#   test-suites.sh <haxe binary> <log dir> [mode...]      (default: off strict default)
 #
 # Needs utest in the haxelib repository HAXELIB_PATH points to (verified with utest a94f881, as a
 # dev library), and neko for haxelib. HAXE_STD_PATH defaults to this tree's std/.
@@ -16,7 +18,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 BIN="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 LOGDIR="$2"
 shift 2
-MODES="${*:-off strict warm}"
+MODES="${*:-off strict default}"
 export PATH="$(dirname "$BIN"):$PATH"
 export HAXE_STD_PATH="${HAXE_STD_PATH:-$ROOT/std}"
 mkdir -p "$LOGDIR"

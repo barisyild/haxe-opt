@@ -72,17 +72,17 @@ The local build of the unchanged release was 7% slower than the official binary 
 With Haxe's own generators, whose code is OCaml that haxe-plus does not touch, only the macro and
 GC share of a build gets faster (same machine, output byte-identical in every case):
 
-| Build | Release 4.3.7 | haxe-plus, JIT on | JIT off |
+| Build | Release 4.3.7 | haxe-plus | JIT off |
 |---|---|---|---|
 | The same game to JavaScript (12 MB) | 7.84 / 7.79 s | 7.23 / 7.38 s | 7.25 / 7.33 s |
-| Haxe's tests/unit to C++, generation only (2165 .cpp) | 3.15 / 3.07 s | 3.34 / 2.92 s | 2.40 / 2.45 s |
+| Haxe's tests/unit to C++, generation only (2165 .cpp) | 3.15 / 3.07 s | 2.20 / 2.22 / 2.20 s (J2) | 2.24 / 2.25 / 2.22 s |
 | The same through hxcpp 4.3.171, end to end | 77.0 s | 80.0 s | |
 
 The hxcpp build is the C++ compiler's time (identical sources, so identical work; the 3 s is that
-build's noise). Where few macros run, the JIT's fixed cost — generating every class's source to
-find its cache key (0.18 s here) and loading bundles (0.17 s) — is more than it saves
-([Future work](#future-work)). hxcpp 4.3.2 from lib.haxe.org does not build on the macOS 27 SDK
-(its zlib 1.2.11 defines `fdopen` as a macro); the GitHub builds (4.3.171, zlib 1.3.1) do.
+build's noise). Before J2, compiling every class natively cost tests/unit 0.1–0.5 s more than no
+JIT at all; J2 leaves light projects closure-compiled. hxcpp 4.3.2 from lib.haxe.org does not
+build on the macOS 27 SDK (its zlib 1.2.11 defines `fdopen` as a macro); the GitHub builds
+(4.3.171, zlib 1.3.1) do.
 
 Where the time goes now (sampling profile of the last build): GC about 17% (a live heap of ~5 GB,
 mostly the typed AST the macros keep), the macro API's encoders about 15%, JIT-compiled Haxe code
@@ -157,6 +157,8 @@ Environment variables:
 | `HAXE_EVAL_JIT_DUMP=dir` | also write the source of every unit compiled (compiled only: use a cold cache) |
 | `HAXE_EVAL_JIT_MAX_FUNCTION=n` | largest function compiled, in typed expressions (default 3000) |
 | `HAXE_EVAL_JIT_SIZES=1` | print the size of every function over 1000 typed expressions |
+| `HAXE_EVAL_JIT_THRESHOLD=n` | calls in one compilation that make its project heavy (J2; default 1000000); 0 = every class native, the default under `HAXE_EVAL_JIT_STRICT` |
+| `HAXE_EVAL_JIT_COUNTS=n` | at exit, the project's calls and the n classes with most calls, while not heavy |
 
 The JIT is also off under the eval debugger (`-D eval-debugger`, debug socket). With
 `-D eval-times` compiled functions take the general environment path so that timers still work.
@@ -176,8 +178,9 @@ tests (3); the whole set ran at checkpoints along the way and on the final state
    recompiler's generated Haxe compared with `diff -r` against the output of the release binary.
    recompsx's full test gate (`scripts/test.sh`, which also builds and runs both of its targets)
    passed with the final binary.
-2. **Haxe's own eval suites**, in three modes — JIT off; JIT on and strict with a cold cache (every
-   unit compiled); JIT on with a warm cache:
+2. **Haxe's own eval suites**, in three modes — JIT off; strict (every class native, threshold 0)
+   with a cold cache, so that every unit is compiled; the defaults (J2: these suites are light
+   projects, so their functions run closure-compiled behind the counting wrapper):
 
        extra/haxe-plus/test-suites.sh ./haxe <log dir>
 
@@ -208,8 +211,8 @@ The commits of each branch follow these groups, so each can be taken on its own:
 "eval: native JIT" (J), "eval: exact run-time caches and fewer allocations" (R1–R12),
 "compiler: GC settings for macro-heavy builds" (G1), "ci: run the CI workflow by hand only" (C1),
 "haxe-plus: documentation, scripts, differential tests", "ci: runners and OCaml 4.14 for every
-build" (C2) and "ci: attach the packages to a published release" (C3). The code comments at each
-change repeat the essentials.
+build" (C2), "ci: attach the packages to a published release" (C3) and "eval: native code only
+for heavy projects" (J2). The code comments at each change repeat the essentials.
 
 ### J: native JIT — `src/macro/eval/evalJitNative.ml`, `evalJitRt.ml`
 
@@ -325,6 +328,45 @@ typed AST (`texpr_expr` and friends) for new or changed constructors: the genera
 compiler never reuses units compiled for another build; `jit_version` is part of every key, for
 changes of the scheme itself. Check that the OCaml version still has `Dynlink.loadfile_private`
 and the flags in use.
+
+### J2: native code only for heavy projects — "Tiers" in `evalJitNative.ml`
+
+**Why.** Making the classes native costs a fixed amount in every compilation — each unit's source
+generated to find its cache key, the bundles loaded (the first load of a new bundle more), the
+functions linked — which compilations running few macros never pay back. Haxe's tests/unit to
+C++: 2.3 s without the JIT, 2.4–2.9 s with every class native.
+
+**What.** Every compilation belongs to a *project*: the kind of context (macro or interp) and the
+class paths — not the defines or the main class, so the variants of one build (outputs, profiles)
+and the programs of one test suite share it. In a project not known to be heavy, every function is the closure compiler's,
+exactly as without the JIT, behind a wrapper that counts the calls and then calls it in tail
+position; nothing is generated or loaded. When a compilation makes `HAXE_EVAL_JIT_THRESHOLD` calls
+(default 1,000,000), the project is recorded as heavy: a file `heavy-<digest>` in the cache root.
+Every later compilation of a heavy project prepares all its classes natively up front, exactly as
+with threshold 0 (and as J did before J2): no wrapper there. A function's tier is fixed when it is
+created; nothing is ever swapped.
+
+**Why the project and not the class.** The first version counted calls per class and made the hot
+classes native: on the reflaxe.CPP build it was 5% slower than all-native (46.3 s against 44.2 s,
+same binary, interleaved), because driver classes (`reflaxe.ReflectCompiler`,
+`cxxcompiler.helpers.Sort`, `reflaxe.output.OutputManager`, ...) are called rarely yet run much of
+the work in loops and local functions, which a class's call count does not see. Native code saves
+about 120 ns a call on that build (329 million calls, 82 s closure-compiled against 44 s native)
+and preparing every class costs a few tenths of a second: it pays from a few million calls.
+
+**Exact because** the tier-0 function is the very closure the JIT-off path creates, called in tail
+position by a wrapper that only counts; heavy projects run J's code as before.
+
+**Measured.** tests/unit to C++ (61,678 calls, light): 2.20 / 2.22 / 2.20 s, JIT off 2.24 / 2.25 /
+2.22 s, all-native 2.30 / 2.29 / 2.33 s. The reflaxe.CPP game build (the step recompsx's PC and
+Dreamcast builds share): first compilation 81.9 s (closure-compiled, becomes heavy), second 48.6 s
+(its units compiled for a new binary), then 44.31 / 44.49 s against 44.60 / 44.33 s all-native.
+recompsx's recompiler (`--run`, 18 million calls): first 6.12 s (= JIT off), then 3.02 / 3.01 s.
+The price is that one first compilation per project, per cache root; heavy files outlive rebuilds
+of the compiler (they are keyed by the project, not the binary).
+
+**Porting.** Needs the `curapi` of the context when the first class is added (the project is read
+from the compiler's `class_path`). Keep the wrapper a tail call.
 
 ### R1: EvalHash — `src/macro/eval/evalHash.ml`
 
@@ -590,6 +632,10 @@ workflow.
   evalJit does.
 - ocamlopt takes minutes on the largest generated functions (and fails on frames past 32 KB on
   arm64): hence the size cap.
+- Counting a class's calls says little about its work: rarely called driver classes run loops and
+  local functions (J2).
+- On a busy machine a 45 s build varies by ±3 s: compare configurations with the same binary where
+  possible (a different binary alone moves code layout), interleaved, and several pairs.
 
 ## Porting to another Haxe version
 
@@ -632,14 +678,15 @@ In the order of what they may be worth:
    relocatable eval-jit.conf and bundled ocamlopt and libraries would bring package users from ~90 s
    to 40 s on the benchmark. Windows is untested (pruning uses `rm -rf`).
 6. **Coverage**: run tests/display, tests/server (the JIT under `--wait`/`--connect`), tests/optimization.
-7. **The JIT's fixed cost**: every class of a batch has its unit source generated (to compute the
-   cache key) and its bundle loaded, even when few of its methods ever run: 0.35 s on Haxe's
-   tests/unit, where the JIT is then slower than no JIT. Prepare a class only when one of its
-   methods is first called, or key the cache without generating the source.
+7. **The first compilation of a heavy project** runs closure-compiled (J2): 82 s instead of 44 s on
+   the reflaxe.CPP build, once per project and cache. Removing it needs promotion within the run:
+   functions behind a stable function value whose body is swapped once the project turns heavy
+   (identity is observable, so the value must stay), and units compiled in the background.
 
 ## History
 
 - 2026-09-29 — `haxe4` created from 4.3.7 with J, R1–R12, G1 and C1; verified as above on recompsx
   (Crash Bash through reflaxe.CPP, 331 → 40.5 s; recompiler 6.8 → 2.8 s). The repository became
   a fork of HaxeFoundation/haxe (renamed from barisyild/haxe). C2: CI brought up to date for a
-  trial run of the release packages.
+  trial run of the release packages. J2: native code only for heavy projects, after measuring the
+  JIT's fixed cost on Haxe's tests/unit and hxcpp (4.3.171).
