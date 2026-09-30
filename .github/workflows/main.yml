@@ -754,6 +754,14 @@ jobs:
           choco install wget
           wget --version
 
+      # haxe-plus: as on mac (HAXE-PLUS.md, C4); installed where the tests look for it, C:\tools\php
+      - name: PHP 8.4
+        if: matrix.target == 'php'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, sqlite3
+
       - name: Setup haxelib
         shell: pwsh
         run: |
@@ -874,6 +882,14 @@ jobs:
       - name: Install homebrew packages
         if: matrix.BREW_PACKAGES
         run: brew install ${{matrix.BREW_PACKAGES}}
+
+      # haxe-plus: 5.0.0-preview.1's PHP runtime turns PHP 8.5's warnings on float-to-int casts it cannot
+      # represent into exceptions (Issue7533, TestReflect.testIs), as 4.3.7's does (HAXE-PLUS.md, C4)
+      - name: PHP 8.4
+        if: matrix.target == 'php'
+        run: |
+          brew install php@8.4
+          echo "$(brew --prefix php@8.4)/bin" >> $GITHUB_PATH
 
       - name: Test
         run: |

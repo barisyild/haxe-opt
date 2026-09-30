@@ -248,7 +248,9 @@ class Flash {
 		setupFlashPlayer();
 		setupFlexSdk();
 		for (flashVersion in ["11", "32"]) {
-			runCommand("haxe", ["compile-flash.hxml", "-D", "fdb", "-D", "dump", "-D", "dump_ignore_var_ids", "--swf-version", flashVersion].concat(args));
+			// haxe-plus: a script may run for 60 s instead of the player's 15: on the slow macos-15-intel
+			// runners one of the unit tests took longer (Error #1502) (HAXE-PLUS.md, C4)
+			runCommand("haxe", ["compile-flash.hxml", "-D", "fdb", "-D", "dump", "-D", "dump_ignore_var_ids", "-D", "swf-script-timeout=60", "--swf-version", flashVersion].concat(args));
 			runFlash("bin/unit.swf");
 		}
 
