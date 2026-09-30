@@ -1,0 +1,23 @@
+Main.hx:55: 6765
+Main.hx:57: Derived:d:Base(10)
+Main.hx:58: 13
+Main.hx:60: Derived:d:Base(13)
+Main.hx:61: 12,12,0
+Main.hx:62: [zero,small,small,small,other,hundred]
+Main.hx:63: [1,2,2,-1]
+Main.hx:66: 3
+Main.hx:67: -38
+Main.hx:68: caught string zero,caught int 42,ok2
+Main.hx:69: 1:5:x,1:2:x,1:2:y
+Main.hx:73: 11,two,[1,14,3]
+Main.hx:76: [1,3,5,9],4
+Main.hx:79: 01234
+Main.hx:82: 7
+Main.hx:84: 7
+Main.hx:86: [0,10,20]
+Main.hx:89: 8,10,10
+Main.hx:90: 124,3.5,1,-3,15,-4,2
+Main.hx:91: 1,Circle(1.5)
+Main.hx:93: true,false
+Main.hx:94: null call: Null Access
+Main.hx:95: true

@@ -1,0 +1,1 @@
+minor_heap_size=33554432 space_overhead=600

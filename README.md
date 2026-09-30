@@ -1,3 +1,8 @@
+> **haxe-plus `haxe5`** — Haxe 5.0.0-preview.1 with a much faster eval target (macros, `--interp`,
+> `--run`): a native JIT, exact run-time caches and tuned GC settings, with exactly the same results
+> as 5.0.0-preview.1. What changed, why it is exact, and how to build, test and port it:
+> [HAXE-PLUS.md](HAXE-PLUS.md).
+
 <p align="center">
   <a href="https://haxe.org/" title="haxe.org"><img src="extra/images/Readme.png" /></a>
 </p>

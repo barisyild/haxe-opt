@@ -1,0 +1,22 @@
+Main.hx:17: 1000 s0! s999! 1000 s0 s999
+Main.hx:19: 910 s0 s999
+Main.hx:21: 0
+Main.hx:23: 1000 s999
+Main.hx:26: 500 s10 s509 500 s510
+Main.hx:29: 300 s700 700
+Main.hx:31: 4889 45a58c8c3a52c898cfa3ec83f6f8199b
+Main.hx:33: 1000 s0 s999 true
+Main.hx:36: 1000 S0 S999
+Main.hx:37: 4889
+Main.hx:38: 4891
+Main.hx:39: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
+Main.hx:44: true
+Main.hx:48: 235 701 701 9999
+Main.hx:51: -1 700 -1
+Main.hx:54: 1889 400 ts0 ts399
+Main.hx:57: 1891 400 ts0 ts399
+Main.hx:60: boom400
+Main.hx:63: fboom450
+Main.hx:65: 271 269 x270
+Main.hx:66: true
+Main.hx:67: 400 2 300 1391 f299 2
