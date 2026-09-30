@@ -11,7 +11,9 @@
 #   test-suites.sh <haxe binary> <log dir> [mode...]      (default: off strict default)
 #
 # Needs utest in the haxelib repository HAXELIB_PATH points to (verified with utest a94f881, as a
-# dev library), and neko for haxelib. HAXE_STD_PATH defaults to this tree's std/.
+# dev library), and neko for haxelib. HAXE_STD_PATH defaults to this tree's std/. HAXE_PLUS_TESTS
+# runs a copy of tests/ elsewhere instead: haxelib prefers a local .haxelib repository in any parent
+# directory to HAXELIB_PATH.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -21,6 +23,7 @@ shift 2
 MODES="${*:-off strict default}"
 export PATH="$(dirname "$BIN"):$PATH"
 export HAXE_STD_PATH="${HAXE_STD_PATH:-$ROOT/std}"
+TESTS="${HAXE_PLUS_TESTS:-$ROOT/tests}"
 mkdir -p "$LOGDIR"
 LOGDIR="$(cd "$LOGDIR" && pwd)"
 failed=0
@@ -29,7 +32,7 @@ run() {
 	local mode=$1 name=$2 dir=$3; shift 3
 	local log="$LOGDIR/$mode/$name.log" start=$(date +%s)
 	mkdir -p "$LOGDIR/$mode"
-	( cd "$ROOT/tests/$dir" && case $mode in
+	( cd "$TESTS/$dir" && case $mode in
 		off) HAXE_EVAL_JIT=0 "$@" ;;
 		strict) HAXE_EVAL_JIT_STRICT=1 "$@" ;;
 		*) "$@" ;;
@@ -45,7 +48,7 @@ run() {
 
 # The sys tests run with EXISTS=1, as RunCi does. File names with invalid Unicode cannot exist on
 # APFS, and compile-fs.hxml says to comment its define out there: done for the run only.
-FS="$ROOT/tests/sys/compile-fs.hxml"
+FS="$TESTS/sys/compile-fs.hxml"
 restore() { [ -f "$FS.haxe-plus" ] && mv -f "$FS.haxe-plus" "$FS"; }
 trap restore EXIT
 if [ "$(uname)" = Darwin ]; then

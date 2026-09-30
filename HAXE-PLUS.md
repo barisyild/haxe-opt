@@ -7,7 +7,7 @@ Each branch is one Haxe release plus the changes this file describes.
 | Branch | Base | State |
 |---|---|---|
 | `haxe4` | 4.3.7, the latest Haxe 4 release | done and verified (this file describes it) |
-| `haxe5` | 5.0.0-preview.1, the latest Haxe 5 release | planned: port with the checklist in [Porting](#porting-to-another-haxe-version) |
+| `haxe5` | 5.0.0-preview.1, the latest Haxe 5 release | ported from `haxe4`, verified: the same changes but R11, adapted to Haxe 5 (its HAXE-PLUS.md, "The port from haxe4") |
 
 The repository ([barisyild/haxe-plus](https://github.com/barisyild/haxe-plus)) is a GitHub fork of
 HaxeFoundation/haxe, so upstream tags and history are one fetch away. Only the branches above are
@@ -117,6 +117,16 @@ ptmap 2.0.5, sha 1.15.4, camlp-streams 5.0.1, luv 0.5.13 (0.5.14 in the Windows 
 0.24.0, integers 0.8.0; pcre2 10.47, zlib 1.2.12, neko 2.4.1, mbedtls 2.28.9; macOS 27 on arm64.
 OCaml 5 has not been tried.
 
+**On macOS, give the mbedtls headers with `CPATH` (or `-I`), not `C_INCLUDE_PATH`**, when another
+mbedtls is installed in `/usr/local`: clang searches `/usr/local/include` before `C_INCLUDE_PATH`.
+Here that was mbedtls 3.6.3, so `libs/mbedtls`'s stubs were compiled against its headers and linked
+with the 2.28 library, whose structures differ (`mbedtls_entropy_context`: 904 bytes against 1032).
+The stubs allocate the smaller size and the library initializes the larger: a heap overflow in
+every use of eval's mbedtls. A plain HTTPS request crashed in 5 of 20 runs with the local build
+(0 of 20 with the official binary); Guard Malloc (`DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib`)
+stops it at the overflowing `memset` in `mbedtls_entropy_init` every time. Found while porting to
+Haxe 5, whose tests/unit makes an HTTPS request; `echo | cc -E -v -x c -` prints the search order.
+
 On macOS with a recent clang, luv 0.5.13 fails to build with
 `incompatible-function-pointer-types` errors: install it with `CC` pointing to a wrapper script
 that runs `cc -Wno-error=incompatible-function-pointer-types "$@"`.
@@ -193,7 +203,9 @@ tests (3); the whole set ran at checkpoints along the way and on the final state
    | threads | `haxe build.hxml --interp` | ALL TESTS OK |
    | nullsafety | `haxe test.hxml` | exit 0 |
 
-   utest a94f881 installed as a dev library in the haxelib repository of `HAXELIB_PATH`. The sys
+   utest a94f881 installed as a dev library in the haxelib repository of `HAXELIB_PATH`. A local
+   `.haxelib` in a parent directory hides `HAXELIB_PATH`: then run a copy of tests/ elsewhere with
+   `HAXE_PLUS_TESTS=<copy>/tests` (name the copy `tests/`: some tests check paths). The sys
    suite runs with `EXISTS=1` as RunCi does; on APFS, file names with invalid Unicode cannot exist,
    so the script comments out `-D TEST_INVALID_UNICODE_FS` in `tests/sys/compile-fs.hxml` for the
    run, as that file says to.
@@ -740,26 +752,42 @@ the Windows 64 build, now the longest job, 27 minutes.
 
 ## Porting to another Haxe version
 
-For `haxe5` (from `5.0.0-preview.1`) or a newer Haxe 4 release:
+As `haxe5` was made from `haxe4` (the details: "The port from haxe4" in the `haxe5` branch's
+HAXE-PLUS.md):
 
-1. Branch from the release tag: `git checkout -b haxe5 5.0.0-preview.1`.
-2. Toolchain: read the new haxe.opam. Everything was verified on OCaml 4.14.2. On OCaml 5, check
-   `Dynlink.loadfile_private`, ocamlopt's flags (`-linscan`), the GC parameters (G1) and
-   `caml_make_vect`'s forced collection (R12).
-3. Take the groups one at a time, in this order: R (small and independent), G1, C1, J, then the
-   documentation commit. Cherry-pick the commit, and resolve every conflict by re-deriving the
-   change from its entry above, never by taking either side blindly.
-4. For each R change, recheck the exactness assumption its entry names against the new code.
-5. For J, diff the files listed under "Porting" in its entry between the two bases, and carry every
-   semantic change into the generator and `evalJitRt.ml`; make it raise `Unsupported` for any new
-   typed-AST constructor until it is handled.
-6. Build and run `test-suites.sh` (off, strict with a cold cache, warm) and `tests/run.sh`. If an
-   expected output differs, compare with the new release's own binary: update `expected.txt` only
-   to what the release gives.
-7. A real macro-heavy project: byte-identical output against the release binary; interleaved
-   timings.
-8. Re-tune G1.
-9. Update this file: branch table, results, catalog, history.
+1. Branch from the release tag: `git switch -c <branch> <tag>`. In a tree built for 4.3, delete
+   the generated `src/compiler/version.ml` first: Haxe 5 generates it with dune.
+2. Toolchain: read the new haxe.opam and the tag's CI (its `OCAML_VERSION`), and make an opam switch
+   of that OCaml next to the old one; `opam pin add haxe . --no-action` then
+   `opam install haxe --deps-only --assume-depexts`. On macOS pass the mbedtls headers with `CPATH`
+   ([Building](#building)). On OCaml 5, `Dynlink.loadfile_private`, `-linscan` and R12's forced
+   collection were checked for `haxe5`; G1's values were not re-measured.
+3. Build the unchanged release the same way and keep it next to the new branch: every test and
+   measurement is compared with it, not with the official binaries.
+4. Cherry-pick the code commits in their order (J, R, G1, J2), each building on its own before the
+   next is taken, then C1 and C3, then the documentation commit. Resolve every conflict by
+   re-deriving the change from its entry in this file, never by taking either side blindly.
+5. For each R change, recheck the exactness assumption its entry names against the new code; drop a
+   change the new release made unnecessary (R11 for Haxe 5), and say so under its entry.
+6. For J, diff between the two bases what compiled code mirrors: `evalJit.ml`, `evalEmitter.ml`
+   (above all `create_function`, `create_closure`, `process_arguments`, `emit_try`),
+   `evalContext.ml` (`push_environment`, `pop_environment`, `get_eval`), `evalExceptions.ml`,
+   `evalValue.ml`, and `texpr_expr` in `tType.ml`. Carry every semantic change into the generator
+   and `evalJitRt.ml`; make the generator raise `Unsupported` for any new typed-AST constructor
+   until it is handled. The compiler catches changed types, not changed behaviour: a unit that
+   fails to compile at run time falls back silently, so run strict.
+7. Tests: build the release's own haxelib (`make haxelib`: an older one may reject the version
+   string), install the utest commit `tests/RunCi.hx` names, and run on a copy of `tests/` named
+   `tests/`, outside any directory with a local `.haxelib`, with `std/` next to it and hxjava in the
+   repository for the server tests. Run `test-suites.sh` (off, strict with a cold cache, defaults),
+   the server tests, and `tests/run.sh`; if an expected output differs, compare with the unchanged
+   release: update `expected.txt` only to what it gives.
+8. A real eval workload: byte-identical output against the unchanged build, interleaved timings.
+   reflaxe.CPP does not build on Haxe 5; recompsx's recompiler and tests/unit did for `haxe5`.
+9. Run the CI by hand on the new branch, and fix what today's runners broke (as C4 did for 4.3.7).
+10. Re-tune G1 when the OCaml version changes.
+11. Update this file: branch table, results, verification, catalog notes, CI, history, and the
+    other branch's branch table.
 
 ## Future work
 
@@ -782,7 +810,14 @@ In the order of what they may be worth:
 7. **The first compilation of a heavy project** runs closure-compiled (J2): 82 s instead of 44 s on
    the reflaxe.CPP build, once per project and cache. Removing it needs promotion within the run:
    functions behind a stable function value whose body is swapped once the project turns heavy
-   (identity is observable, so the value must stay), and units compiled in the background.
+   (identity is observable, so the value must stay), and units compiled in the background, by
+   ocamlopt processes the main thread polls (no OCaml thread needed). Worth it with the JIT kit
+   (5), when every CI build and every user's first build is a first compilation (owner's call,
+   2026-09-30): about 48 s instead of 82 s estimated.
+8. **Upstream, not haxe-plus**: `ml_mbedtls_x509_next` (libs/mbedtls, 4.3.7 and 5.x) wraps a
+   certificate chain's inner node in a custom block whose finalizer frees it and every node after
+   it, which the chain still links to: a double free once both are collected, parent first. Found
+   while chasing the crash under [Building](#building); worth an upstream report.
 
 ## History
 
@@ -793,3 +828,8 @@ In the order of what they may be worth:
   JIT's fixed cost on Haxe's tests/unit and hxcpp (4.3.171).
 - 2026-09-30 — C4: the CI passes on today's runners (46 jobs, 32 minutes), after seven runs; the
   Windows display test failure of HaxeFoundation/haxe#11756 stays known.
+- 2026-09-30 — `haxe5` ported from this branch (its HAXE-PLUS.md). Found on the way: the local
+  builds had compiled the mbedtls stubs against another mbedtls's headers (`C_INCLUDE_PATH` loses to
+  `/usr/local/include`), a heap overflow in eval's TLS: `CPATH` ([Building](#building)). The porting
+  checklist now says what the port taught; `test-suites.sh` runs a copy of tests/
+  (`HAXE_PLUS_TESTS`).
