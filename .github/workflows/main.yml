@@ -18,15 +18,14 @@ concurrency:
 
 jobs:
   windows64-build:
-    # haxe-plus: the image of 5.0.0-preview.1's time. On windows-latest (Windows 2025, VS 2026) ocamlfind's
-    # install cannot set permissions in the opam switch (HAXE-PLUS.md, C4)
-    runs-on: windows-2022
+    runs-on: windows-latest
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
       PLATFORM: windows64
       ARCH: 64
       MINGW_ARCH: x86_64
-      CYG_ROOT: D:\cygwin
+      # haxe-plus: where today's setup-ocaml puts Cygwin, as upstream (HAXE-PLUS.md, C4)
+      CYG_ROOT: C:\.opam\.cygwin\root
     steps:
       - uses: actions/checkout@main
         with:
@@ -59,9 +58,11 @@ jobs:
       - name: Print Neko version
         run: neko -version 2>&1
 
+      # haxe-plus: today's setup-ocaml v3, as upstream: with the 3.2.19 the tag locked, installing
+      # ocamlfind 1.9.8 fails ("install: cannot change permissions of '...\_opam/bin'"). Upstream
+      # handles the 32-bit libraries that lock was for with OPAMEXTERNALSOLVER below (HAXE-PLUS.md, C4)
       - name: Setup ocaml
-      # Lock to 3.2.19 to work around an issue with 32-bit libraries getting installed
-        uses: ocaml/setup-ocaml@3d85bf33a66e089149cd1e9c75da7b9cb6d9d3a7
+        uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ env.OCAML_VERSION }}
           opam-local-packages: |
@@ -74,7 +75,7 @@ jobs:
         run: |
           curl.exe -fsSL -o "libmbedtls.tar.xz" --retry 3 `
             https://github.com/Simn/mingw64-mbedtls/releases/download/${{ env.MBEDTLS_VERSION }}/mingw64-${{ env.MINGW_ARCH }}-mbedtls-${{ env.MBEDTLS_VERSION }}-1.tar.xz
-          ${{ env.CYG_ROOT }}\bin\tar.exe -C ${{ env.CYG_ROOT }} -xvf libmbedtls.tar.xz
+          opam exec -- tar -C / -xvf libmbedtls.tar.xz
 
       - name: Install OCaml libraries
         uses: nick-fields/retry@v3
@@ -90,8 +91,12 @@ jobs:
             $ErrorActionPreference = 'Stop'
             # see: https://github.com/aantron/luv/issues/162
             $env:PATH="${env:CYG_ROOT}\bin;${env:CYG_ROOT}\usr\x86_64-w64-mingw32\bin;${env:PATH}"
+            opam pin add haxe . --no-action
             opam install haxe --deps-only
             opam list
+        env:
+          # Work around default resolver installing 32-bit libraries
+          OPAMEXTERNALSOLVER: builtin-mccs+glpk
 
       - name: Set ADD_REVISION=1 for non-release
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -108,8 +113,8 @@ jobs:
           opam exec -- make -s -f Makefile.win -j"$env:NUMBER_OF_PROCESSORS" haxe
           opam exec -- make -s -f Makefile.win haxelib
           opam exec -- make -f Makefile.win echo_package_files package_bin package_installer_win package_choco
-          cygcheck ./haxe.exe
-          cygcheck ./haxelib.exe
+          opam exec -- cygcheck ./haxe.exe
+          opam exec -- cygcheck ./haxelib.exe
           ls ./out
 
       - name: Upload artifact
@@ -667,8 +672,7 @@ jobs:
 
   windows64-test:
     needs: windows64-build
-    # haxe-plus: as windows64-build (HAXE-PLUS.md, C4)
-    runs-on: windows-2022
+    runs-on: windows-latest
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
       PLATFORM: windows64
