@@ -12,7 +12,9 @@ class Lua {
 		switch (systemName){
 			case "Linux":
 				Linux.requireAptPackages(["libpcre2-dev", "libssl-dev", "libreadline-dev"]);
-				runCommand("pip", ["install", "--user", "hererocks"]);
+				// haxe-plus: the released hererocks can no longer fetch LuaJIT 2.0, and the runner's pip
+				// cannot install it from git; pipx can, as upstream does (HAXE-PLUS.md, C4)
+				runCommand("pipx", ["install", "git+https://github.com/luarocks/hererocks.git"]);
 				final pyUserBase = commandResult("python", ["-m", "site", "--user-base"]).stdout.trim();
 				addToPATH(Path.join([pyUserBase, "bin"]));
 			case "Mac": {
@@ -21,7 +23,11 @@ class Lua {
 				else
 					runNetworkCommand("brew", ["install", "python3"]);
 
-				runCommand("pip3", ["install", "hererocks"]);
+				// haxe-plus: as on Linux, through pipx, which puts it in ~/.local/bin (HAXE-PLUS.md, C4)
+				if (!commandSucceed("pipx", ["--version"]))
+					runNetworkCommand("brew", ["install", "pipx"]);
+				runCommand("pipx", ["install", "git+https://github.com/luarocks/hererocks.git"]);
+				addToPATH(Path.join([Sys.getEnv("HOME"), ".local", "bin"]));
 				runCommand("brew", ["install", "openssl"]);
 			}
 		}

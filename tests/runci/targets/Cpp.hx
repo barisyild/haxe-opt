@@ -27,7 +27,9 @@ class Cpp {
 			final path = getHaxelibPath("hxcpp");
 			infoMsg('hxcpp has already been installed in $path.');
 		} catch(e:Dynamic) {
-			haxelibInstallGit("HaxeFoundation", "hxcpp", true);
+			// haxe-plus: the last hxcpp before 5.0.0-preview.1 (2025-06-05). Since #1345 (2026-05-31) hxcpp
+			// declares __hxcpp_lock_create & co. only below API level 500, which preview.1 still calls (HAXE-PLUS.md, C4)
+			haxelibInstallGit("HaxeFoundation", "hxcpp", "a428509569b8fa251f2317aa0fe9ed2de1927980", true);
 			final oldDir = Sys.getCwd();
 			changeDirectory(getHaxelibPath("hxcpp") + "tools/hxcpp/");
 			runCommand("haxe", ["-D", "source-header=''", "compile.hxml"]);

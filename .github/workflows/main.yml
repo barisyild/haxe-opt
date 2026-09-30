@@ -18,7 +18,9 @@ concurrency:
 
 jobs:
   windows64-build:
-    runs-on: windows-latest
+    # haxe-plus: the image of 5.0.0-preview.1's time. On windows-latest (Windows 2025, VS 2026) ocamlfind's
+    # install cannot set permissions in the opam switch (HAXE-PLUS.md, C4)
+    runs-on: windows-2022
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
       PLATFORM: windows64
@@ -217,13 +219,14 @@ jobs:
           name: xmldoc
           path: extra/doc
 
+  # haxe-plus: HXCPP_COMPILE_CACHE is absolute in every test job: hxcpp passes a leading ~ to the linker as it is (C4)
   linux-test:
     needs: linux-build
     runs-on: ubuntu-22.04
     env:
       PLATFORM: linux64
       TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       HAXE_STD_PATH: /usr/local/share/haxe/std
     strategy:
       fail-fast: false
@@ -309,7 +312,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       PLATFORM: linux64
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
     steps:
       - uses: actions/checkout@main
         with:
@@ -374,7 +377,8 @@ jobs:
           haxelib git hxtemplo https://github.com/Simn/hxtemplo.git
           haxelib git hxargs https://github.com/Simn/hxargs.git
           haxelib git markdown https://github.com/dpeek/haxe-markdown.git
-          haxelib git hxcpp https://github.com/HaxeFoundation/hxcpp.git
+          # haxe-plus: hxcpp as of 5.0.0-preview.1, as tests/runci/targets/Cpp.hx (HAXE-PLUS.md, C4)
+          haxelib git hxcpp https://github.com/HaxeFoundation/hxcpp.git a428509569b8fa251f2317aa0fe9ed2de1927980
           cd $(haxelib libpath hxcpp)/tools/hxcpp
           haxe compile.hxml
           cd -
@@ -470,7 +474,7 @@ jobs:
     env:
       PLATFORM: linux-arm64
       TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       HAXE_STD_PATH: /usr/local/share/haxe/std
     strategy:
       fail-fast: false
@@ -545,7 +549,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-13]
+        # haxe-plus: macos-13 runners are retired (HAXE-PLUS.md, C4)
+        os: [macos-14, macos-15-intel]
     runs-on: ${{ matrix.os }}
     env:
       PLATFORM: mac${{ matrix.os == 'macos-14' && '-arm64' || '' }}
@@ -607,6 +612,16 @@ jobs:
           sudo make && sudo make install
           cd ..
 
+      # haxe-plus: opam's release binary, as upstream does now, instead of Homebrew's. Homebrew has no
+      # bottles for Intel macOS 15, where its opam took 40 minutes to build from source with OCaml and
+      # OpenSSL (HAXE-PLUS.md, C4)
+      - name: Install opam
+        run: |
+          set -ex
+          curl -sSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-${{ runner.arch == 'ARM64' && 'arm64' || 'x86_64' }}-macos -o $RUNNER_TEMP/opam
+          sudo install $RUNNER_TEMP/opam /usr/local/bin/opam
+          opam --version
+
       - name: Install OCaml libraries
         if: steps.cache-opam.outputs.cache-hit != 'true'
         run: |
@@ -652,12 +667,13 @@ jobs:
 
   windows64-test:
     needs: windows64-build
-    runs-on: windows-latest
+    # haxe-plus: as windows64-build (HAXE-PLUS.md, C4)
+    runs-on: windows-2022
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
       PLATFORM: windows64
       TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       ARCH: 64
     strategy:
       fail-fast: false
@@ -787,11 +803,12 @@ jobs:
 
   mac-test:
     needs: mac-build-universal
-    runs-on: macos-13
+    # haxe-plus: macos-13 runners are retired (HAXE-PLUS.md, C4)
+    runs-on: macos-15-intel
     env:
       PLATFORM: mac
       TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       HAXE_STD_PATH: /usr/local/share/haxe/std
     strategy:
       fail-fast: false

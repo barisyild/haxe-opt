@@ -1,4 +1,4 @@
-brew "opam"
+# haxe-plus: opam is installed from its release binary by the workflow (HAXE-PLUS.md, C4)
 brew "ninja"
 brew "cmake"
 brew "pkg-config"
