@@ -820,7 +820,8 @@ jobs:
     # script limit, 60 s included (HAXE-PLUS.md, C4)
     runs-on: ${{ matrix.target == 'flash' && 'macos-14' || 'macos-15-intel' }}
     env:
-      PLATFORM: mac
+      # haxe-plus: on arm64 the universal haxelib needs an arm64 libneko (HAXE-PLUS.md, C4)
+      PLATFORM: ${{ matrix.target == 'flash' && 'mac-arm64' || 'mac' }}
       TEST: ${{matrix.target}}
       HXCPP_COMPILE_CACHE: ${{ github.workspace }}/hxcache
       HAXE_STD_PATH: /usr/local/share/haxe/std
