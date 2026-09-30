@@ -815,8 +815,10 @@ jobs:
 
   mac-test:
     needs: mac-build-universal
-    # haxe-plus: macos-13 runners are retired (HAXE-PLUS.md, C4)
-    runs-on: macos-15-intel
+    # haxe-plus: macos-13 runners are retired. Flash runs on arm64 (macos-14) as upstream's mac tests
+    # do: on the slow macos-15-intel runners TestBigInt.testBigIntRandomPrime ran past the player's
+    # script limit, 60 s included (HAXE-PLUS.md, C4)
+    runs-on: ${{ matrix.target == 'flash' && 'macos-14' || 'macos-15-intel' }}
     env:
       PLATFORM: mac
       TEST: ${{matrix.target}}
